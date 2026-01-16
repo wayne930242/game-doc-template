@@ -1,0 +1,12 @@
+[project]
+name = "game-doc-scripts"
+version = "1.0.0"
+description = "PDF extraction and chapter splitting tools for game documentation"
+requires-python = ">=3.11"
+dependencies = [
+    "markitdown>=0.1.0",
+    "pymupdf>=1.24.0",
+]
+
+[tool.uv]
+dev-dependencies = []

@@ -5,6 +5,15 @@ node_modules/
 dist/
 .astro/
 
+# Data files (PDFs and extracted content)
+data/pdfs/
+data/markdown/
+
+# Python virtual environment
+scripts/.venv/
+__pycache__/
+*.pyc
+
 # Environment
 .env
 .env.*

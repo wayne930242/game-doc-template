@@ -47,7 +47,7 @@ npm run dev
 
 ```
 game-doc-template/
-├── docs/                          # 主要文件專案
+├── docs/                          # 前端：文件網站
 │   ├── src/
 │   │   ├── assets/               # 圖片資源
 │   │   │   └── hero.jpg          # 🔧 首頁主圖（替換）
@@ -70,6 +70,15 @@ game-doc-template/
 │   │   └── favicon.svg           # 🔧 網站圖示（替換）
 │   ├── astro.config.mjs          # 🔧 網站設定
 │   └── package.json
+├── scripts/                       # 後端：內容處理腳本
+│   ├── extract_pdf.py            # PDF 提取工具
+│   ├── split_chapters.py         # 章節拆分工具
+│   ├── pyproject.toml            # Python 依賴
+│   └── README.md                 # 腳本說明
+├── data/                          # 資料目錄（git 忽略）
+│   ├── pdfs/                     # 放置 PDF 原檔
+│   └── markdown/                 # 提取的 Markdown
+├── chapters.json                  # 🔧 章節設定檔（自動產生）
 ├── vercel.json                   # Vercel 部署設定
 └── README.md
 ```
@@ -304,11 +313,99 @@ docs/
 
 ---
 
+## 📄 PDF 內容提取（可選）
+
+如果您的遊戲規則書是 PDF 格式，可以使用內建的腳本自動提取並拆分章節。
+
+### 安裝 Python 依賴
+
+```bash
+cd scripts
+
+# 使用 uv（推薦）
+uv sync
+
+# 或使用 pip
+pip install markitdown pymupdf
+```
+
+### 工作流程
+
+#### 1. 提取 PDF
+
+```bash
+# 將 PDF 放入 data/pdfs/
+mkdir -p ../data/pdfs
+cp your-rulebook.pdf ../data/pdfs/
+
+# 執行提取
+uv run python extract_pdf.py ../data/pdfs/your-rulebook.pdf
+```
+
+這會產生：
+- `data/markdown/your-rulebook.md` — 純文字版本
+- `data/markdown/your-rulebook_pages.md` — 含頁碼標記（用於拆分）
+- `data/markdown/images/` — 提取的圖片
+
+#### 2. 設定章節結構
+
+```bash
+# 產生設定檔範例
+uv run python split_chapters.py --init
+```
+
+編輯 `chapters.json`：
+
+```json
+{
+    "source": "data/markdown/your-rulebook_pages.md",
+    "output_dir": "docs/src/content/docs",
+    "chapters": {
+        "rules": {
+            "title": "核心規則",
+            "files": {
+                "index": {
+                    "title": "規則總覽",
+                    "description": "遊戲規則概述",
+                    "pages": [1, 20],
+                    "order": 0
+                },
+                "combat": {
+                    "title": "戰鬥系統",
+                    "description": "戰鬥規則說明",
+                    "pages": [21, 40],
+                    "order": 1
+                }
+            }
+        }
+    }
+}
+```
+
+#### 3. 拆分章節
+
+```bash
+uv run python split_chapters.py
+```
+
+這會根據設定檔，將 PDF 內容拆分到 `docs/src/content/docs/` 對應的資料夾。
+
+> **提示**：自動提取的內容可能需要手動調整格式。建議先檢視 `_pages.md` 檔案確認頁碼範圍。
+
+---
+
 ## 🛠 技術棧
 
+**前端（文件網站）**
 - [Astro](https://astro.build/) — 靜態網站生成器
 - [Starlight](https://starlight.astro.build/) — 文件主題
 - [Bun](https://bun.sh/) — JavaScript 執行環境（可選）
+
+**後端（內容處理）**
+- [Python 3.11+](https://python.org/)
+- [markitdown](https://github.com/microsoft/markitdown) — PDF 轉 Markdown
+- [PyMuPDF](https://pymupdf.readthedocs.io/) — PDF 處理與圖片提取
+- [uv](https://github.com/astral-sh/uv) — Python 套件管理（推薦）
 
 ---
 
