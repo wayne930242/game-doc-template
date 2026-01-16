@@ -1,0 +1,414 @@
+/* ============================================
+   遊戲文件模板 - 自訂主題樣式
+   ============================================
+
+   自訂指南：
+   1. 修改「主題配色」區塊的顏色變數
+   2. 替換 /public/bg.jpg 背景圖片
+   3. 替換 /public/og-image.jpg 社群分享圖
+   4. 修改 /src/assets/hero.jpg 首頁主圖
+
+   ============================================ */
+
+/* ============================================
+   🎨 主題配色（主要自訂區域）
+   ============================================ */
+
+:root,
+:root[data-theme='light'],
+:root[data-theme='dark'] {
+  /* 灰階色系（通常不需修改） */
+  --sl-color-white: hsl(0, 0%, 100%);
+  --sl-color-gray-1: hsl(224, 20%, 94%);
+  --sl-color-gray-2: hsl(224, 10%, 77%);
+  --sl-color-gray-3: hsl(224, 8%, 56%);
+  --sl-color-gray-4: hsl(224, 10%, 36%);
+  --sl-color-gray-5: hsl(224, 14%, 20%);
+  --sl-color-gray-6: hsl(224, 20%, 12%);
+  --sl-color-black: hsl(224, 25%, 6%);
+
+  /* ----------------------------------------
+     TODO: 修改以下主題色
+     ---------------------------------------- */
+
+  /* 主色調 - 用於連結、按鈕、強調 */
+  --sl-color-accent-low: hsl(230, 60%, 18%);
+  --sl-color-accent: hsl(210, 100%, 55%);
+  --sl-color-accent-high: hsl(210, 100%, 80%);
+
+  /* 特色配色 - 可用於不同類別的視覺區分 */
+  --color-primary: #3b82f6;    /* 主要色 */
+  --color-secondary: #22c55e;  /* 次要色 */
+  --color-tertiary: #ef4444;   /* 第三色 */
+  --color-quaternary: #f97316; /* 第四色 */
+
+  /* 系統色彩（自動套用） */
+  --sl-color-text: var(--sl-color-gray-1);
+  --sl-color-text-accent: var(--sl-color-accent-high);
+  --sl-color-bg: var(--sl-color-black);
+  --sl-color-bg-nav: hsl(224, 25%, 8%);
+  --sl-color-bg-sidebar: hsl(224, 25%, 8%);
+  --sl-color-bg-inline-code: var(--sl-color-gray-5);
+  --sl-color-hairline-light: var(--sl-color-gray-5);
+  --sl-color-hairline: var(--sl-color-gray-6);
+}
+
+/* ============================================
+   深色模式設定
+   ============================================ */
+
+/* 隱藏主題切換按鈕（強制深色模式） */
+starlight-theme-select {
+  display: none !important;
+}
+
+html {
+  color-scheme: dark !important;
+}
+
+/* ============================================
+   背景設定
+   ============================================ */
+
+/* TODO: 替換 /public/bg.jpg 為您的背景圖片 */
+body {
+  background-image: url('/bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+/* 內容區域半透明遮罩（保持可讀性） */
+.main-pane {
+  background: rgba(10, 10, 20, 0.7);
+}
+
+/* 首頁不加遮罩 */
+[data-has-hero] .main-pane {
+  background: transparent;
+}
+
+.sidebar {
+  background: rgba(10, 10, 20, 0.9) !important;
+}
+
+header.header {
+  background: rgba(10, 10, 20, 0.9) !important;
+}
+
+/* ============================================
+   字體設定
+   ============================================ */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Noto Serif TC', 'Source Han Serif TC', Georgia, serif;
+  font-weight: 700;
+}
+
+/* ============================================
+   首頁 Hero 區塊
+   ============================================ */
+
+[data-page-type="splash"] .hero {
+  position: relative;
+  padding: 6rem 1rem 4rem !important;
+  margin: -1rem -1rem 2rem !important;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 50%, rgba(239, 68, 68, 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 20% 50%, rgba(34, 197, 94, 0.08), transparent),
+    linear-gradient(180deg, hsl(224, 30%, 8%) 0%, hsl(224, 25%, 6%) 100%);
+}
+
+/* 頂部裝飾光條 */
+[data-page-type="splash"] .hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 2px;
+  background: linear-gradient(90deg,
+    transparent,
+    var(--color-primary) 20%,
+    var(--color-quaternary) 50%,
+    var(--color-tertiary) 80%,
+    transparent
+  );
+  opacity: 0.6;
+}
+
+/* 底部漸層過渡 */
+[data-page-type="splash"] .hero::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background: linear-gradient(to bottom, transparent, var(--sl-color-bg));
+  pointer-events: none;
+}
+
+/* Hero 標題 */
+[data-page-type="splash"] .hero h1 {
+  font-size: clamp(2.5rem, 6vw, 4rem) !important;
+  font-weight: 800 !important;
+  background: linear-gradient(135deg,
+    #ffffff 0%,
+    #93c5fd 50%,
+    #60a5fa 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  filter: drop-shadow(0 0 30px rgba(59, 130, 246, 0.3));
+  margin-bottom: 1rem !important;
+}
+
+/* Hero 圖片（圓形裁切） */
+.hero img {
+  object-fit: cover !important;
+  width: 280px !important;
+  height: 280px !important;
+  border-radius: 50% !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* Hero 副標題 */
+[data-page-type="splash"] .hero .tagline {
+  font-size: 1.35rem !important;
+  color: var(--sl-color-gray-2) !important;
+  max-width: 600px;
+  margin: 0 auto 2rem !important;
+  line-height: 1.6;
+}
+
+/* Hero 按鈕 */
+[data-page-type="splash"] .hero .action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.75rem !important;
+  border-radius: 9999px !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  text-decoration: none !important;
+}
+
+[data-page-type="splash"] .hero .action.primary {
+  background: linear-gradient(135deg, var(--color-primary), #1d4ed8) !important;
+  color: white !important;
+  box-shadow:
+    0 4px 15px rgba(59, 130, 246, 0.4),
+    0 0 30px rgba(59, 130, 246, 0.2);
+}
+
+[data-page-type="splash"] .hero .action.primary:hover {
+  box-shadow:
+    0 8px 25px rgba(59, 130, 246, 0.5),
+    0 0 50px rgba(59, 130, 246, 0.3);
+}
+
+[data-page-type="splash"] .hero .action.minimal {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: var(--sl-color-gray-1) !important;
+  backdrop-filter: blur(10px);
+}
+
+[data-page-type="splash"] .hero .action.minimal:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+/* ============================================
+   卡片樣式
+   ============================================ */
+
+.card-grid {
+  gap: 1.5rem !important;
+}
+
+.card {
+  position: relative;
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.01) 100%
+  ) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 16px !important;
+  padding: 1.5rem !important;
+  overflow: hidden;
+}
+
+.card:hover {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.3),
+    0 0 40px rgba(59, 130, 246, 0.1);
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+}
+
+.card .title {
+  font-size: 1.2rem !important;
+  font-weight: 700 !important;
+  margin-bottom: 0.75rem !important;
+  color: var(--sl-color-white) !important;
+}
+
+.card .icon {
+  color: var(--sl-color-accent) !important;
+  opacity: 0.9;
+}
+
+/* ============================================
+   章節標題
+   ============================================ */
+
+[data-page-type="splash"] main h2 {
+  font-size: 1.75rem !important;
+  margin-top: 3rem !important;
+  margin-bottom: 1.5rem !important;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(90deg, var(--sl-color-white), var(--sl-color-gray-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ============================================
+   提示框（Aside）
+   ============================================ */
+
+.starlight-aside {
+  border-radius: 12px !important;
+  border-left-width: 3px !important;
+}
+
+.starlight-aside--danger {
+  border-left-color: var(--color-tertiary) !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+}
+
+.starlight-aside--tip {
+  border-left-color: var(--color-primary) !important;
+  background: rgba(59, 130, 246, 0.05) !important;
+}
+
+.starlight-aside--note {
+  border-left-color: #a855f7 !important;
+  background: rgba(168, 85, 247, 0.05) !important;
+}
+
+.starlight-aside--caution {
+  border-left-color: var(--color-quaternary) !important;
+  background: rgba(249, 115, 22, 0.05) !important;
+}
+
+/* 提示框標題顏色 */
+.starlight-aside--note .starlight-aside__title {
+  color: #c4b5fd !important;
+}
+
+.starlight-aside--tip .starlight-aside__title {
+  color: #93c5fd !important;
+}
+
+.starlight-aside--caution .starlight-aside__title {
+  color: #fdba74 !important;
+}
+
+.starlight-aside--danger .starlight-aside__title {
+  color: #fca5a5 !important;
+}
+
+/* ============================================
+   導航列
+   ============================================ */
+
+header.header {
+  background: rgba(10, 10, 20, 0.8) !important;
+  backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.site-title {
+  font-weight: 700 !important;
+  color: var(--sl-color-white) !important;
+}
+
+/* ============================================
+   側邊欄
+   ============================================ */
+
+nav.sidebar {
+  background: rgba(10, 10, 20, 0.6) !important;
+}
+
+nav.sidebar a {
+  border-radius: 8px !important;
+}
+
+nav.sidebar a:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+nav.sidebar a[aria-current="page"] {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: var(--color-primary) !important;
+}
+
+/* ============================================
+   程式碼區塊
+   ============================================ */
+
+pre {
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ============================================
+   響應式設計
+   ============================================ */
+
+@media (max-width: 768px) {
+  [data-page-type="splash"] .hero {
+    padding: 4rem 1rem 3rem !important;
+  }
+
+  [data-page-type="splash"] .hero h1 {
+    font-size: 2rem !important;
+  }
+
+  [data-page-type="splash"] .hero .tagline {
+    font-size: 1.1rem !important;
+  }
+}
+
+/* ============================================
+   工具類別
+   ============================================ */
+
+.color-primary { color: var(--color-primary); }
+.color-secondary { color: var(--color-secondary); }
+.color-tertiary { color: var(--color-tertiary); }
+.color-quaternary { color: var(--color-quaternary); }
