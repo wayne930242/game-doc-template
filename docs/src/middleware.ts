@@ -26,6 +26,8 @@ export const onRequest = defineMiddleware((context, next) => {
 		status: 401,
 		headers: {
 			'WWW-Authenticate': 'Basic realm="Protected"',
+			'Content-Type': 'text/plain; charset=utf-8',
+			'Cache-Control': 'no-store',
 		},
 	});
 });
