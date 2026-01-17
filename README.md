@@ -147,6 +147,16 @@ uv run python split_chapters.py
 2. 在 Vercel 匯入專案
 3. 自動部署
 
+### 密碼保護（可選）
+
+在 Vercel 環境變數設定 `SITE_PASSWORD` 即可啟用密碼保護：
+
+1. 進入 Vercel 專案設定 → Environment Variables
+2. 新增 `SITE_PASSWORD`，值為您想要的密碼
+3. 重新部署
+
+未設定此變數則不啟用保護。
+
 ### 手動建置
 
 ```bash

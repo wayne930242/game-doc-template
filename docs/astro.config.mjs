@@ -1,7 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import vercel from '@astrojs/vercel';
 
 // ============================================
 // 遊戲文件設定
@@ -23,10 +22,6 @@ const SITE_CONFIG = {
 // ============================================
 
 export default defineConfig({
-	output: 'static',
-	adapter: vercel({
-		edgeMiddleware: true,
-	}),
 	markdown: {
 		smartypants: false,
 	},
