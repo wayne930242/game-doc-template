@@ -17,7 +17,86 @@
 :root,
 :root[data-theme='light'],
 :root[data-theme='dark'] {
-  /* 灰階色系（通常不需修改） */
+  /* ============================================
+     🎨 可自訂色系（HSL 分量）
+     ============================================ */
+
+  /* 背景色 HSL - 調整 --bg-l 可調暗背景 */
+  --bg-h: 224;
+  --bg-s: 25%;
+  --bg-l: 6%;
+
+  /* 主色 (藍) HSL */
+  --color-primary-h: 217;
+  --color-primary-s: 91%;
+  --color-primary-l: 60%;
+
+  /* 次要色 (綠) HSL */
+  --color-secondary-h: 142;
+  --color-secondary-s: 71%;
+  --color-secondary-l: 45%;
+
+  /* 第三色 (紅) HSL */
+  --color-tertiary-h: 0;
+  --color-tertiary-s: 84%;
+  --color-tertiary-l: 60%;
+
+  /* 第四色 (橘) HSL */
+  --color-quaternary-h: 25;
+  --color-quaternary-s: 95%;
+  --color-quaternary-l: 53%;
+
+  /* Note 色 (紫) HSL */
+  --color-note-h: 270;
+  --color-note-s: 91%;
+  --color-note-l: 60%;
+
+  /* ============================================
+     計算後的顏色（自動推導）
+     ============================================ */
+
+  /* 主色變體 */
+  --color-primary: hsl(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l));
+  --color-primary-dark: hsl(var(--color-primary-h), var(--color-primary-s), 40%);
+  --color-primary-light: hsl(var(--color-primary-h), var(--color-primary-s), 80%);
+  --color-primary-glow: hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.15);
+
+  /* 其他主色 */
+  --color-secondary: hsl(var(--color-secondary-h), var(--color-secondary-s), var(--color-secondary-l));
+  --color-secondary-glow: hsla(var(--color-secondary-h), var(--color-secondary-s), var(--color-secondary-l), 0.08);
+
+  --color-tertiary: hsl(var(--color-tertiary-h), var(--color-tertiary-s), var(--color-tertiary-l));
+  --color-tertiary-light: hsl(var(--color-tertiary-h), var(--color-tertiary-s), 80%);
+  --color-tertiary-glow: hsla(var(--color-tertiary-h), var(--color-tertiary-s), var(--color-tertiary-l), 0.08);
+
+  --color-quaternary: hsl(var(--color-quaternary-h), var(--color-quaternary-s), var(--color-quaternary-l));
+  --color-quaternary-light: hsl(var(--color-quaternary-h), var(--color-quaternary-s), 75%);
+
+  --color-note: hsl(var(--color-note-h), var(--color-note-s), var(--color-note-l));
+  --color-note-light: hsl(var(--color-note-h), var(--color-note-s), 80%);
+
+  /* ============================================
+     背景與遮罩
+     ============================================ */
+
+  --overlay-opacity: 0.7;
+  --bg-overlay: hsla(var(--bg-h), var(--bg-s), 5%, var(--overlay-opacity));
+  --bg-overlay-strong: hsla(var(--bg-h), var(--bg-s), 5%, 0.9);
+  --bg-overlay-light: hsla(var(--bg-h), var(--bg-s), 5%, 0.6);
+
+  /* ============================================
+     Card 變數
+     ============================================ */
+
+  --card-bg-alpha: 0.03;
+  --card-border-alpha: 0.08;
+  --card-hover-border-alpha: 0.15;
+  --card-hover-glow: hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.1);
+
+  /* ============================================
+     灰階色系（通常不需修改）
+     ============================================ */
+
   --sl-color-white: hsl(0, 0%, 100%);
   --sl-color-gray-1: hsl(224, 20%, 94%);
   --sl-color-gray-2: hsl(224, 10%, 77%);
@@ -25,29 +104,19 @@
   --sl-color-gray-4: hsl(224, 10%, 36%);
   --sl-color-gray-5: hsl(224, 14%, 20%);
   --sl-color-gray-6: hsl(224, 20%, 12%);
-  --sl-color-black: hsl(224, 25%, 6%);
+  --sl-color-black: hsl(var(--bg-h), var(--bg-s), var(--bg-l));
 
-  /* ----------------------------------------
-     TODO: 修改以下主題色
-     ---------------------------------------- */
-
-  /* 主色調 - 用於連結、按鈕、強調 */
-  --sl-color-accent-low: hsl(230, 60%, 18%);
-  --sl-color-accent: hsl(210, 100%, 55%);
-  --sl-color-accent-high: hsl(210, 100%, 80%);
-
-  /* 特色配色 - 可用於不同類別的視覺區分 */
-  --color-primary: #3b82f6;    /* 主要色 */
-  --color-secondary: #22c55e;  /* 次要色 */
-  --color-tertiary: #ef4444;   /* 第三色 */
-  --color-quaternary: #f97316; /* 第四色 */
+  /* Starlight 系統色 */
+  --sl-color-accent-low: hsl(var(--color-primary-h), 60%, 18%);
+  --sl-color-accent: var(--color-primary);
+  --sl-color-accent-high: var(--color-primary-light);
 
   /* 系統色彩（自動套用） */
   --sl-color-text: var(--sl-color-gray-1);
   --sl-color-text-accent: var(--sl-color-accent-high);
   --sl-color-bg: var(--sl-color-black);
-  --sl-color-bg-nav: hsl(224, 25%, 8%);
-  --sl-color-bg-sidebar: hsl(224, 25%, 8%);
+  --sl-color-bg-nav: hsl(var(--bg-h), var(--bg-s), 8%);
+  --sl-color-bg-sidebar: hsl(var(--bg-h), var(--bg-s), 8%);
   --sl-color-bg-inline-code: var(--sl-color-gray-5);
   --sl-color-hairline-light: var(--sl-color-gray-5);
   --sl-color-hairline: var(--sl-color-gray-6);
@@ -84,7 +153,7 @@ body {
 
 /* 內容區域半透明遮罩（保持可讀性） */
 .main-pane {
-  background: rgba(10, 10, 20, 0.7);
+  background: var(--bg-overlay);
 }
 
 /* 首頁不加遮罩 */
@@ -93,11 +162,11 @@ body {
 }
 
 .sidebar {
-  background: rgba(10, 10, 20, 0.9) !important;
+  background: var(--bg-overlay-strong) !important;
 }
 
 header.header {
-  background: rgba(10, 10, 20, 0.9) !important;
+  background: var(--bg-overlay-strong) !important;
 }
 
 /* ============================================
@@ -119,10 +188,10 @@ h1, h2, h3, h4, h5, h6 {
   margin: -1rem -1rem 2rem !important;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 50%, rgba(239, 68, 68, 0.08), transparent),
-    radial-gradient(ellipse 60% 40% at 20% 50%, rgba(34, 197, 94, 0.08), transparent),
-    linear-gradient(180deg, hsl(224, 30%, 8%) 0%, hsl(224, 25%, 6%) 100%);
+    radial-gradient(ellipse 80% 50% at 50% -20%, var(--color-primary-glow), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 50%, var(--color-tertiary-glow), transparent),
+    radial-gradient(ellipse 60% 40% at 20% 50%, var(--color-secondary-glow), transparent),
+    linear-gradient(180deg, hsl(var(--bg-h), 30%, 8%) 0%, hsl(var(--bg-h), var(--bg-s), var(--bg-l)) 100%);
 }
 
 /* 頂部裝飾光條 */
@@ -161,15 +230,15 @@ h1, h2, h3, h4, h5, h6 {
   font-size: clamp(2.5rem, 6vw, 4rem) !important;
   font-weight: 800 !important;
   background: linear-gradient(135deg,
-    #ffffff 0%,
-    #93c5fd 50%,
-    #60a5fa 100%
+    var(--sl-color-white) 0%,
+    var(--color-primary-light) 50%,
+    var(--color-primary) 100%
   );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   text-shadow: none;
-  filter: drop-shadow(0 0 30px rgba(59, 130, 246, 0.3));
+  filter: drop-shadow(0 0 30px hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.3));
   margin-bottom: 1rem !important;
 }
 
@@ -204,17 +273,17 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 [data-page-type="splash"] .hero .action.primary {
-  background: linear-gradient(135deg, var(--color-primary), #1d4ed8) !important;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark)) !important;
   color: white !important;
   box-shadow:
-    0 4px 15px rgba(59, 130, 246, 0.4),
-    0 0 30px rgba(59, 130, 246, 0.2);
+    0 4px 15px hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.4),
+    0 0 30px hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.2);
 }
 
 [data-page-type="splash"] .hero .action.primary:hover {
   box-shadow:
-    0 8px 25px rgba(59, 130, 246, 0.5),
-    0 0 50px rgba(59, 130, 246, 0.3);
+    0 8px 25px hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.5),
+    0 0 50px hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.3);
 }
 
 [data-page-type="splash"] .hero .action.minimal {
@@ -240,20 +309,20 @@ h1, h2, h3, h4, h5, h6 {
 .card {
   position: relative;
   background: linear-gradient(135deg,
-    rgba(255, 255, 255, 0.03) 0%,
-    rgba(255, 255, 255, 0.01) 100%
+    rgba(255, 255, 255, var(--card-bg-alpha)) 0%,
+    rgba(255, 255, 255, calc(var(--card-bg-alpha) / 3)) 100%
   ) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, var(--card-border-alpha)) !important;
   border-radius: 16px !important;
   padding: 1.5rem !important;
   overflow: hidden;
 }
 
 .card:hover {
-  border-color: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, var(--card-hover-border-alpha)) !important;
   box-shadow:
     0 20px 40px rgba(0, 0, 0, 0.3),
-    0 0 40px rgba(59, 130, 246, 0.1);
+    0 0 40px var(--card-hover-glow);
 }
 
 .card::before {
@@ -265,7 +334,7 @@ h1, h2, h3, h4, h5, h6 {
   height: 1px;
   background: linear-gradient(90deg,
     transparent,
-    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, calc(var(--card-border-alpha) + 0.02)),
     transparent
   );
 }
@@ -291,7 +360,7 @@ h1, h2, h3, h4, h5, h6 {
   margin-top: 3rem !important;
   margin-bottom: 1.5rem !important;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, var(--card-border-alpha));
   background: linear-gradient(90deg, var(--sl-color-white), var(--sl-color-gray-2));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -309,39 +378,39 @@ h1, h2, h3, h4, h5, h6 {
 
 .starlight-aside--danger {
   border-left-color: var(--color-tertiary) !important;
-  background: rgba(239, 68, 68, 0.05) !important;
+  background: hsla(var(--color-tertiary-h), var(--color-tertiary-s), var(--color-tertiary-l), 0.05) !important;
 }
 
 .starlight-aside--tip {
   border-left-color: var(--color-primary) !important;
-  background: rgba(59, 130, 246, 0.05) !important;
+  background: hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.05) !important;
 }
 
 .starlight-aside--note {
-  border-left-color: #a855f7 !important;
-  background: rgba(168, 85, 247, 0.05) !important;
+  border-left-color: var(--color-note) !important;
+  background: hsla(var(--color-note-h), var(--color-note-s), var(--color-note-l), 0.05) !important;
 }
 
 .starlight-aside--caution {
   border-left-color: var(--color-quaternary) !important;
-  background: rgba(249, 115, 22, 0.05) !important;
+  background: hsla(var(--color-quaternary-h), var(--color-quaternary-s), var(--color-quaternary-l), 0.05) !important;
 }
 
 /* 提示框標題顏色 */
 .starlight-aside--note .starlight-aside__title {
-  color: #c4b5fd !important;
+  color: var(--color-note-light) !important;
 }
 
 .starlight-aside--tip .starlight-aside__title {
-  color: #93c5fd !important;
+  color: var(--color-primary-light) !important;
 }
 
 .starlight-aside--caution .starlight-aside__title {
-  color: #fdba74 !important;
+  color: var(--color-quaternary-light) !important;
 }
 
 .starlight-aside--danger .starlight-aside__title {
-  color: #fca5a5 !important;
+  color: var(--color-tertiary-light) !important;
 }
 
 /* ============================================
@@ -349,7 +418,7 @@ h1, h2, h3, h4, h5, h6 {
    ============================================ */
 
 header.header {
-  background: rgba(10, 10, 20, 0.8) !important;
+  background: var(--bg-overlay) !important;
   backdrop-filter: blur(12px) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
 }
@@ -364,7 +433,7 @@ header.header {
    ============================================ */
 
 nav.sidebar {
-  background: rgba(10, 10, 20, 0.6) !important;
+  background: var(--bg-overlay-light) !important;
 }
 
 nav.sidebar a {
@@ -376,7 +445,7 @@ nav.sidebar a:hover {
 }
 
 nav.sidebar a[aria-current="page"] {
-  background: rgba(59, 130, 246, 0.15) !important;
+  background: var(--color-primary-glow) !important;
   color: var(--color-primary) !important;
 }
 
@@ -386,7 +455,7 @@ nav.sidebar a[aria-current="page"] {
 
 pre {
   border-radius: 12px !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, var(--card-border-alpha)) !important;
 }
 
 /* ============================================
