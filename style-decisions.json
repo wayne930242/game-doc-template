@@ -2,5 +2,19 @@
   "_meta": {
     "description": "風格決定記錄 - 翻譯用語選擇與原因",
     "updated": ""
+  },
+  "translation_mode": {
+    "mode": null,
+    "options": {
+      "full": {
+        "name": "全文翻譯",
+        "description": "完整翻譯所有內容，保留原文結構與細節"
+      },
+      "summary": {
+        "name": "摘要翻譯",
+        "description": "精簡翻譯，提取重點規則，省略範例與冗長說明"
+      }
+    },
+    "reason": ""
   }
 }

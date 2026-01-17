@@ -19,6 +19,22 @@ Use `pdf-translation` and `terminology-management` skills.
 
 ## Process
 
+### 0. Select Translation Mode
+
+Read `style-decisions.json` and check `translation_mode.mode`:
+
+**If mode is null (not set):**
+- Use AskUserQuestion tool to ask user:
+  - **全文翻譯**: 完整翻譯所有內容，保留原文結構與細節
+  - **摘要翻譯**: 精簡翻譯，提取重點規則，省略範例與冗長說明
+- Update `style-decisions.json` with user's choice:
+  - Set `translation_mode.mode` to `"full"` or `"summary"`
+  - Set `translation_mode.reason` to user's reason (if provided)
+
+**If mode is already set:**
+- Show current mode setting
+- Ask if user wants to change (optional)
+
 ### 1. Select Target
 
 If no `$ARGUMENTS`:
@@ -58,6 +74,20 @@ For each target file:
 | Bold/Italic | Preserve markers |
 | Links | Translate text, keep URLs |
 | Game terms | Apply glossary strictly |
+
+### Mode-Specific Rules
+
+**全文翻譯模式 (full):**
+- 翻譯所有段落，包含範例與說明
+- 保留原文結構不做刪減
+- 適合需要完整參考的規則書
+
+**摘要翻譯模式 (summary):**
+- 提取核心規則與機制
+- 省略冗長範例，改用精簡說明
+- 合併重複概念
+- 使用條列式整理重點
+- 適合快速查閱的規則摘要
 
 ### 4. New Terms
 
