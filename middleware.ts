@@ -83,6 +83,22 @@ function getLoginHTML(redirectPath: string, error: boolean) {
 </html>`;
 }
 
+// Social media crawlers for OG preview
+const SOCIAL_CRAWLERS = [
+  /facebookexternalhit/i,
+  /Twitterbot/i,
+  /LinkedInBot/i,
+  /Slackbot/i,
+  /Discordbot/i,
+  /TelegramBot/i,
+  /WhatsApp/i,
+];
+
+function isSocialCrawler(userAgent: string | null): boolean {
+  if (!userAgent) return false;
+  return SOCIAL_CRAWLERS.some((pattern) => pattern.test(userAgent));
+}
+
 export default function middleware(request: Request) {
   // Skip if no password configured
   if (!PASSWORD) {
@@ -94,6 +110,12 @@ export default function middleware(request: Request) {
 
   // Skip API routes
   if (pathname.startsWith("/api/")) {
+    return;
+  }
+
+  // Skip for social media crawlers (OG preview)
+  const userAgent = request.headers.get("user-agent");
+  if (isSocialCrawler(userAgent)) {
     return;
   }
 
