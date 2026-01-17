@@ -7,10 +7,12 @@
 ### 1. 建立專案
 
 ```bash
-# 使用 GitHub 的「Use this template」按鈕建立新 repo
-git clone https://github.com/your-username/your-game-docs.git
-cd your-game-docs
+./gh-clone.sh my-game-docs           # 建立 private repo
+./gh-clone.sh my-game-docs --public  # 建立 public repo
+cd my-game-docs
 ```
+
+或使用 GitHub 網頁的「Use this template」按鈕。
 
 ### 2. 安裝依賴
 
