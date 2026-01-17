@@ -351,6 +351,16 @@ h1, h2, h3, h4, h5, h6 {
   opacity: 0.9;
 }
 
+/* LinkCard hover 樣式 */
+.sl-link-card:hover {
+  background: hsla(var(--bg-h), var(--bg-s), 8%, 0.95) !important;
+  border-color: hsla(var(--bg-h), var(--bg-s), 25%, 0.6) !important;
+}
+
+.sl-link-card:hover .icon {
+  color: var(--sl-color-gray-2) !important;
+}
+
 /* ============================================
    章節標題
    ============================================ */
