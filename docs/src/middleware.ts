@@ -54,6 +54,7 @@ const LOGIN_HTML = `<!DOCTYPE html>
 <body>
   <div class="container">
     <h1>請輸入密碼</h1>
+    <p style="font-size:0.875rem;color:#888;margin:0 0 1rem;text-align:center;">密碼找洪偉要</p>
     {{ERROR}}
     <form method="POST">
       <input type="password" name="password" placeholder="密碼" autofocus required>
