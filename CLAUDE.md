@@ -49,6 +49,7 @@ PDF 遊戲規則文件轉換成繁體中文 Markdown 文件網站。
 | Command | Description |
 |---------|-------------|
 | `/init-doc` | 初次摘要：建立術語表、拆分章節 |
+| `/translate` | 開始翻譯：翻譯指定章節或檔案 |
 | `/check-consistency` | 一致性校對：檢查術語使用 |
 | `/term-decision` | 用語權衡：術語選擇與全文替換 |
 | `/check-completeness` | 缺漏校對：規則完整性檢查 |
