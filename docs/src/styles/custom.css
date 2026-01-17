@@ -70,13 +70,16 @@ html {
    背景設定
    ============================================ */
 
-/* TODO: 替換 /public/bg.jpg 為您的背景圖片 */
+/* 預設使用純色背景，如需背景圖片請：
+   1. 將圖片放入 /public/bg.jpg
+   2. 取消下方註解 */
 body {
-  background-image: url('/bg.jpg');
+  background-color: var(--sl-color-black);
+  /* background-image: url('/bg.jpg');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
-  background-repeat: no-repeat;
+  background-repeat: no-repeat; */
 }
 
 /* 內容區域半透明遮罩（保持可讀性） */
