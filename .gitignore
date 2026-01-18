@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 .astro/
+.vercel/
 
 # Data files (PDFs and extracted content)
 data/pdfs/
