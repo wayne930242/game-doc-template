@@ -595,7 +595,9 @@ pre {
    ============================================ */
 
 .right-sidebar-panel h2,
-starlight-toc h2 {
+starlight-toc h2,
+.right-sidebar .toggle,
+starlight-toc .toggle {
   color: var(--sl-color-text) !important;
 }
 
@@ -605,6 +607,12 @@ starlight-toc a {
 
 starlight-toc a:hover {
   color: var(--sl-color-white) !important;
+}
+
+/* Mobile TOC toggle */
+mobile-starlight-toc .toggle,
+starlight-toc summary .toggle {
+  color: var(--sl-color-text) !important;
 }
 
 /* 側邊欄群組標題 */
