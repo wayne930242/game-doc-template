@@ -65,9 +65,49 @@ Help user set up `chapters.json`:
 uv run python split_chapters.py
 ```
 
-### 7. Verify
+### 7. Analyze and Split index.md
+
+After initial split, analyze the generated `index.md` to create proper chapter structure:
+
+1. **Identify TOC Structure**
+   - Find table of contents or major headings in index.md
+   - Extract chapter/section titles and their order
+   - Note heading hierarchy (H1, H2, H3)
+
+2. **Propose Chapter Split**
+   Present to user:
+   ```
+   找到以下章節結構：
+   1. [章節名稱] - 約 XXX 字
+   2. [章節名稱] - 約 XXX 字
+   ...
+   建議拆分為獨立檔案嗎？
+   ```
+
+3. **Execute Split**
+   For each identified chapter:
+   - Create new file with slug derived from title
+   - Add frontmatter with `sidebar.order` to preserve TOC sequence
+   - Move corresponding content from index.md
+   - Update index.md to contain only overview/introduction
+
+4. **Update chapters.json**
+   Add new files to config for future reference.
+
+5. **Frontmatter Template**
+   ```yaml
+   ---
+   title: 章節標題
+   description: 章節描述
+   sidebar:
+     order: N  # 保留原始目錄順序
+   ---
+   ```
+
+### 8. Verify
 
 - Check generated files in `docs/src/content/docs/`
+- Verify sidebar order matches original TOC
 - Preview: `cd docs && bun dev`
 
 ## Example Usage
