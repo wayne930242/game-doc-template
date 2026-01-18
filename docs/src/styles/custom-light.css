@@ -517,6 +517,12 @@ dialog::backdrop {
 .pagefind-ui__result-link,
 .pagefind-ui__result-title {
   color: hsl(0, 0%, 15%) !important;
+  background: hsl(0, 0%, 100%) !important;
+  background-color: hsl(0, 0%, 100%) !important;
+}
+
+.pagefind-ui__result-title a {
+  color: hsl(0, 0%, 15%) !important;
 }
 
 .pagefind-ui__result-excerpt {
@@ -524,17 +530,44 @@ dialog::backdrop {
 }
 
 .pagefind-ui__result,
-.pagefind-ui__result-inner {
-  background: hsl(0, 0%, 100%) !important;
-}
-
-.pagefind-ui__result:hover {
-  background: hsl(0, 0%, 96%) !important;
-}
-
-.pagefind-ui__message,
+.pagefind-ui__result-inner,
 .pagefind-ui__result-nested {
+  background: hsl(0, 0%, 100%) !important;
+  background-color: hsl(0, 0%, 100%) !important;
+}
+
+.pagefind-ui__result:hover,
+.pagefind-ui__result-inner:hover {
+  background: hsl(0, 0%, 96%) !important;
+  background-color: hsl(0, 0%, 96%) !important;
+}
+
+.pagefind-ui__message {
   color: hsl(0, 0%, 30%) !important;
+}
+
+/* Pagefind 結果列表容器 */
+.pagefind-ui__results,
+.pagefind-ui__drawer {
+  background: hsl(0, 0%, 100%) !important;
+  background-color: hsl(0, 0%, 100%) !important;
+}
+
+/* 結果內文字 */
+.pagefind-ui__result-nested,
+.pagefind-ui__result-nested p,
+.pagefind-ui__result-nested a {
+  color: hsl(0, 0%, 20%) !important;
+}
+
+.pagefind-ui__result-excerpt,
+.pagefind-ui__result-excerpt mark {
+  color: hsl(0, 0%, 30%) !important;
+}
+
+.pagefind-ui__result-excerpt mark {
+  background: hsl(60, 100%, 85%) !important;
+  color: hsl(0, 0%, 10%) !important;
 }
 
 /* ============================================
@@ -590,6 +623,37 @@ starlight-toc a:hover {
 .right-sidebar-panel h2,
 starlight-toc h2 {
   color: hsl(0, 0%, 10%) !important;
+}
+
+/* Mobile TOC Dropdown */
+mobile-starlight-toc,
+mobile-starlight-toc .dropdown,
+starlight-toc .dropdown {
+  background: hsl(0, 0%, 100%) !important;
+  background-color: hsl(0, 0%, 100%) !important;
+}
+
+mobile-starlight-toc ul,
+mobile-starlight-toc li,
+starlight-toc ul,
+starlight-toc li {
+  background: hsl(0, 0%, 100%) !important;
+  background-color: hsl(0, 0%, 100%) !important;
+}
+
+mobile-starlight-toc a,
+mobile-starlight-toc span {
+  color: hsl(0, 0%, 20%) !important;
+}
+
+mobile-starlight-toc a:hover {
+  color: hsl(0, 0%, 0%) !important;
+  background: hsl(0, 0%, 96%) !important;
+}
+
+mobile-starlight-toc .toggle,
+starlight-toc .toggle {
+  color: hsl(0, 0%, 15%) !important;
 }
 
 /* ============================================

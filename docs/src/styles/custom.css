@@ -609,8 +609,34 @@ starlight-toc a:hover {
   color: var(--sl-color-white) !important;
 }
 
-/* Mobile TOC toggle */
+/* Mobile TOC Dropdown */
+mobile-starlight-toc,
+mobile-starlight-toc .dropdown,
+starlight-toc .dropdown {
+  background: var(--sl-color-bg-nav) !important;
+  background-color: var(--sl-color-bg-nav) !important;
+}
+
+mobile-starlight-toc ul,
+mobile-starlight-toc li,
+starlight-toc ul,
+starlight-toc li {
+  background: var(--sl-color-bg-nav) !important;
+  background-color: var(--sl-color-bg-nav) !important;
+}
+
+mobile-starlight-toc a,
+mobile-starlight-toc span {
+  color: var(--sl-color-gray-2) !important;
+}
+
+mobile-starlight-toc a:hover {
+  color: var(--sl-color-white) !important;
+  background: var(--sl-color-gray-5) !important;
+}
+
 mobile-starlight-toc .toggle,
+starlight-toc .toggle,
 starlight-toc summary .toggle {
   color: var(--sl-color-text) !important;
 }
