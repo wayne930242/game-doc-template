@@ -601,6 +601,26 @@ nav.sidebar a[aria-current="page"] {
   font-weight: 600;
 }
 
+/* Mobile Sidebar Menu */
+.sidebar-content,
+.sidebar-content.sl-flex,
+.sidebar-content ul,
+.sidebar-content ul.top-level,
+.sidebar-content li,
+.sidebar-content details,
+.sidebar-content summary {
+  background: hsl(0, 0%, 100%) !important;
+  background-color: hsl(0, 0%, 100%) !important;
+}
+
+.sidebar-content a {
+  color: hsl(0, 0%, 20%) !important;
+}
+
+.sidebar-content a:hover {
+  background: hsl(0, 0%, 96%) !important;
+}
+
 /* 右側目錄 (TOC) */
 .right-sidebar {
   background: hsla(0, 0%, 100%, 0.92) !important;

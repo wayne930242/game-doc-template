@@ -656,6 +656,26 @@ span.toggle.sl-flex,
   font-weight: 600;
 }
 
+/* Mobile Sidebar Menu */
+.sidebar-content,
+.sidebar-content.sl-flex,
+.sidebar-content ul,
+.sidebar-content ul.top-level,
+.sidebar-content li,
+.sidebar-content details,
+.sidebar-content summary {
+  background: var(--sl-color-bg-nav) !important;
+  background-color: var(--sl-color-bg-nav) !important;
+}
+
+.sidebar-content a {
+  color: var(--sl-color-gray-2) !important;
+}
+
+.sidebar-content a:hover {
+  background: var(--sl-color-gray-5) !important;
+}
+
 /* ============================================
    工具類別
    ============================================ */
