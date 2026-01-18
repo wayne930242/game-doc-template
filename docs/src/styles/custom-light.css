@@ -1,0 +1,692 @@
+/* ============================================
+   遊戲文件模板 - 黑白高對比亮色主題
+   ============================================
+
+   自訂指南：
+   1. 修改「主題配色」區塊的顏色變數
+   2. 替換 /public/bg.jpg 背景圖片
+   3. 替換 /public/og-image.jpg 社群分享圖
+   4. 修改 /src/assets/hero.jpg 首頁主圖
+
+   ============================================ */
+
+/* ============================================
+   🎨 主題配色（黑白高對比亮色風格）
+   ============================================ */
+
+:root,
+:root[data-theme='light'],
+:root[data-theme='dark'] {
+  /* ============================================
+     🎨 黑白配色（HSL 分量）
+     ============================================ */
+
+  /* 背景色 HSL - 白色/淺灰 */
+  --bg-h: 0;
+  --bg-s: 0%;
+  --bg-l: 98%;
+
+  /* 主色 (黑) HSL */
+  --color-primary-h: 0;
+  --color-primary-s: 0%;
+  --color-primary-l: 15%;
+
+  /* 次要色 (深灰) HSL */
+  --color-secondary-h: 0;
+  --color-secondary-s: 0%;
+  --color-secondary-l: 30%;
+
+  /* 第三色 (中灰) HSL */
+  --color-tertiary-h: 0;
+  --color-tertiary-s: 0%;
+  --color-tertiary-l: 45%;
+
+  /* 第四色 (淺灰) HSL */
+  --color-quaternary-h: 0;
+  --color-quaternary-s: 0%;
+  --color-quaternary-l: 60%;
+
+  /* Note 色 (中灰) HSL */
+  --color-note-h: 0;
+  --color-note-s: 0%;
+  --color-note-l: 40%;
+
+  /* ============================================
+     計算後的顏色（自動推導）
+     ============================================ */
+
+  /* 主色變體 */
+  --color-primary: hsl(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l));
+  --color-primary-dark: hsl(var(--color-primary-h), var(--color-primary-s), 5%);
+  --color-primary-light: hsl(var(--color-primary-h), var(--color-primary-s), 35%);
+  --color-primary-glow: hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.08);
+
+  /* 其他主色 */
+  --color-secondary: hsl(var(--color-secondary-h), var(--color-secondary-s), var(--color-secondary-l));
+  --color-secondary-glow: hsla(var(--color-secondary-h), var(--color-secondary-s), var(--color-secondary-l), 0.05);
+
+  --color-tertiary: hsl(var(--color-tertiary-h), var(--color-tertiary-s), var(--color-tertiary-l));
+  --color-tertiary-light: hsl(var(--color-tertiary-h), var(--color-tertiary-s), 65%);
+  --color-tertiary-glow: hsla(var(--color-tertiary-h), var(--color-tertiary-s), var(--color-tertiary-l), 0.05);
+
+  --color-quaternary: hsl(var(--color-quaternary-h), var(--color-quaternary-s), var(--color-quaternary-l));
+  --color-quaternary-light: hsl(var(--color-quaternary-h), var(--color-quaternary-s), 75%);
+
+  --color-note: hsl(var(--color-note-h), var(--color-note-s), var(--color-note-l));
+  --color-note-light: hsl(var(--color-note-h), var(--color-note-s), 55%);
+
+  /* ============================================
+     背景與遮罩（亮色模式 - 加強遮罩）
+     ============================================ */
+
+  --overlay-opacity: 0.85;
+  --bg-overlay: hsla(0, 0%, 100%, var(--overlay-opacity));
+  --bg-overlay-strong: hsla(0, 0%, 100%, 0.95);
+  --bg-overlay-light: hsla(0, 0%, 100%, 0.8);
+
+  /* ============================================
+     Card 變數
+     ============================================ */
+
+  --card-bg-alpha: 0.6;
+  --card-border-alpha: 0.15;
+  --card-hover-border-alpha: 0.3;
+  --card-hover-glow: hsla(0, 0%, 0%, 0.08);
+
+  /* ============================================
+     灰階色系（亮色模式）
+     ============================================ */
+
+  --sl-color-white: hsl(0, 0%, 100%);
+  --sl-color-gray-1: hsl(0, 0%, 10%);
+  --sl-color-gray-2: hsl(0, 0%, 25%);
+  --sl-color-gray-3: hsl(0, 0%, 40%);
+  --sl-color-gray-4: hsl(0, 0%, 55%);
+  --sl-color-gray-5: hsl(0, 0%, 85%);
+  --sl-color-gray-6: hsl(0, 0%, 93%);
+  --sl-color-black: hsl(0, 0%, 5%);
+
+  /* Starlight 系統色 */
+  --sl-color-accent-low: hsl(0, 0%, 90%);
+  --sl-color-accent: var(--color-primary);
+  --sl-color-accent-high: var(--color-primary-dark);
+
+  /* 系統色彩（亮色模式） */
+  --sl-color-text: var(--sl-color-gray-1);
+  --sl-color-text-accent: var(--sl-color-accent-high);
+  --sl-color-bg: var(--sl-color-white);
+  --sl-color-bg-nav: hsla(0, 0%, 100%, 0.95);
+  --sl-color-bg-sidebar: hsla(0, 0%, 100%, 0.95);
+  --sl-color-bg-inline-code: var(--sl-color-gray-6);
+  --sl-color-hairline-light: var(--sl-color-gray-5);
+  --sl-color-hairline: var(--sl-color-gray-6);
+
+  /* Pagefind 搜尋 UI */
+  --pagefind-ui-scale: 0.8;
+  --pagefind-ui-primary: hsl(0, 0%, 20%);
+  --pagefind-ui-text: hsl(0, 0%, 15%);
+  --pagefind-ui-background: hsl(0, 0%, 100%);
+  --pagefind-ui-border: hsl(0, 0%, 80%);
+  --pagefind-ui-tag: hsl(0, 0%, 95%);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 8px;
+  --pagefind-ui-font: inherit;
+}
+
+/* ============================================
+   亮色模式設定
+   ============================================ */
+
+/* 隱藏主題切換按鈕（強制亮色模式） */
+starlight-theme-select {
+  display: none !important;
+}
+
+html {
+  color-scheme: light !important;
+}
+
+/* ============================================
+   背景設定（白色遮罩覆蓋）
+   ============================================ */
+
+body {
+  background-color: hsl(0, 0%, 98%);
+  position: relative;
+}
+
+/* 背景圖層 + 白色遮罩 */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url('/bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: -2;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: hsla(0, 0%, 100%, 0.65);
+  z-index: -1;
+}
+
+/* 內容區域半透明遮罩（保持可讀性） */
+.main-pane {
+  background: var(--bg-overlay);
+}
+
+/* 首頁也要遮罩 */
+[data-has-hero] .main-pane {
+  background: var(--bg-overlay-light);
+}
+
+.sidebar {
+  background: var(--bg-overlay-strong) !important;
+  border-right: 1px solid hsla(0, 0%, 0%, 0.1) !important;
+}
+
+header.header {
+  background: var(--bg-overlay-strong) !important;
+  border-bottom: 1px solid hsla(0, 0%, 0%, 0.1) !important;
+}
+
+/* ============================================
+   字體設定
+   ============================================ */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Noto Serif TC', 'Source Han Serif TC', Georgia, serif;
+  font-weight: 700;
+  color: hsl(0, 0%, 5%) !important;
+}
+
+/* ============================================
+   首頁 Hero 區塊
+   ============================================ */
+
+[data-page-type="splash"] .hero {
+  position: relative;
+  padding: 6rem 1rem 4rem !important;
+  margin: -1rem -1rem 2rem !important;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, hsla(0, 0%, 100%, 0.95) 0%, hsla(0, 0%, 100%, 0.85) 100%);
+}
+
+/* 頂部裝飾光條 */
+[data-page-type="splash"] .hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 2px;
+  background: linear-gradient(90deg,
+    transparent,
+    hsl(0, 0%, 30%) 20%,
+    hsl(0, 0%, 10%) 50%,
+    hsl(0, 0%, 30%) 80%,
+    transparent
+  );
+  opacity: 0.6;
+}
+
+/* 底部漸層過渡 */
+[data-page-type="splash"] .hero::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background: linear-gradient(to bottom, transparent, hsla(0, 0%, 100%, 0.9));
+  pointer-events: none;
+}
+
+/* Hero 標題 */
+[data-page-type="splash"] .hero h1 {
+  font-size: clamp(2.5rem, 6vw, 4rem) !important;
+  font-weight: 800 !important;
+  color: hsl(0, 0%, 5%) !important;
+  -webkit-text-fill-color: hsl(0, 0%, 5%) !important;
+  text-shadow: none;
+  margin-bottom: 1rem !important;
+}
+
+/* Hero 圖片（圓形裁切） */
+.hero img {
+  object-fit: cover !important;
+  width: 280px !important;
+  height: 280px !important;
+  border-radius: 50% !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  border: 3px solid hsl(0, 0%, 90%);
+}
+
+/* Hero 副標題 */
+[data-page-type="splash"] .hero .tagline {
+  font-size: 1.35rem !important;
+  color: hsl(0, 0%, 30%) !important;
+  max-width: 600px;
+  margin: 0 auto 2rem !important;
+  line-height: 1.6;
+}
+
+/* Hero 按鈕 */
+.sl-link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.75rem !important;
+  border-radius: 9999px !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  text-decoration: none !important;
+}
+
+.sl-link-button.primary {
+  background: hsl(0, 0%, 15%) !important;
+  color: hsl(0, 0%, 100%) !important;
+  box-shadow: 0 4px 15px hsla(0, 0%, 0%, 0.2);
+}
+
+.sl-link-button.primary:hover {
+  background: hsl(0, 0%, 5%) !important;
+  color: hsl(0, 0%, 100%) !important;
+  box-shadow: 0 8px 25px hsla(0, 0%, 0%, 0.3);
+}
+
+.sl-link-button.minimal {
+  background: hsla(0, 0%, 100%, 0.9) !important;
+  border: 2px solid hsl(0, 0%, 30%) !important;
+  color: hsl(0, 0%, 15%) !important;
+}
+
+.sl-link-button.minimal:hover {
+  background: hsl(0, 0%, 100%) !important;
+  border-color: hsl(0, 0%, 10%) !important;
+  color: hsl(0, 0%, 5%) !important;
+}
+
+/* ============================================
+   卡片樣式
+   ============================================ */
+
+.card-grid {
+  gap: 1.5rem !important;
+}
+
+.card {
+  position: relative;
+  background: hsla(0, 0%, 100%, var(--card-bg-alpha)) !important;
+  border: 2px solid hsla(0, 0%, 0%, var(--card-border-alpha)) !important;
+  border-radius: 16px !important;
+  padding: 1.5rem !important;
+  overflow: hidden;
+}
+
+.card:hover {
+  border-color: hsla(0, 0%, 0%, var(--card-hover-border-alpha)) !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    hsla(0, 0%, 0%, 0.1),
+    transparent
+  );
+}
+
+.card .title {
+  font-size: 1.2rem !important;
+  font-weight: 700 !important;
+  margin-bottom: 0.75rem !important;
+  color: hsl(0, 0%, 10%) !important;
+}
+
+.card .icon {
+  color: hsl(0, 0%, 20%) !important;
+  opacity: 0.9;
+}
+
+/* LinkCard 樣式 */
+.sl-link-card {
+  background: hsla(0, 0%, 100%, 0.95) !important;
+  border: 2px solid hsla(0, 0%, 0%, 0.2) !important;
+}
+
+.sl-link-card .title {
+  color: hsl(0, 0%, 10%) !important;
+}
+
+.sl-link-card .description {
+  color: hsl(0, 0%, 30%) !important;
+}
+
+.sl-link-card a {
+  color: hsl(0, 0%, 10%) !important;
+  text-decoration: none !important;
+}
+
+.sl-link-card:hover {
+  background: hsl(0, 0%, 100%) !important;
+  border-color: hsla(0, 0%, 0%, 0.4) !important;
+}
+
+.sl-link-card:hover .title {
+  color: hsl(0, 0%, 0%) !important;
+}
+
+.sl-link-card svg {
+  color: hsl(0, 0%, 30%) !important;
+}
+
+/* ============================================
+   章節標題
+   ============================================ */
+
+[data-page-type="splash"] main h2 {
+  font-size: 1.75rem !important;
+  margin-top: 3rem !important;
+  margin-bottom: 1.5rem !important;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid hsl(0, 0%, 85%);
+  color: hsl(0, 0%, 10%) !important;
+}
+
+/* ============================================
+   提示框（Aside）
+   ============================================ */
+
+.starlight-aside {
+  border-radius: 12px !important;
+  border-left-width: 4px !important;
+  background: hsla(0, 0%, 98%, 0.9) !important;
+}
+
+.starlight-aside--danger {
+  border-left-color: hsl(0, 0%, 20%) !important;
+}
+
+.starlight-aside--tip {
+  border-left-color: hsl(0, 0%, 40%) !important;
+}
+
+.starlight-aside--note {
+  border-left-color: hsl(0, 0%, 50%) !important;
+}
+
+.starlight-aside--caution {
+  border-left-color: hsl(0, 0%, 30%) !important;
+}
+
+/* 提示框標題顏色 */
+.starlight-aside--note .starlight-aside__title,
+.starlight-aside--tip .starlight-aside__title,
+.starlight-aside--caution .starlight-aside__title,
+.starlight-aside--danger .starlight-aside__title {
+  color: hsl(0, 0%, 15%) !important;
+}
+
+/* 提示框內容文字顏色 */
+.starlight-aside p,
+.starlight-aside li,
+.starlight-aside {
+  color: hsl(0, 0%, 15%) !important;
+}
+
+/* ============================================
+   導航列
+   ============================================ */
+
+header.header {
+  background: var(--bg-overlay-strong) !important;
+  backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid hsla(0, 0%, 0%, 0.1) !important;
+}
+
+.site-title {
+  font-weight: 700 !important;
+  color: hsl(0, 0%, 10%) !important;
+}
+
+/* 搜尋框按鈕 */
+site-search button[data-open-modal] {
+  background: hsla(0, 0%, 100%, 0.9) !important;
+  border: 1px solid hsl(0, 0%, 80%) !important;
+  color: hsl(0, 0%, 40%) !important;
+}
+
+site-search button[data-open-modal]:hover {
+  background: hsl(0, 0%, 100%) !important;
+  border-color: hsl(0, 0%, 60%) !important;
+}
+
+/* 搜尋 Dialog */
+dialog {
+  background: hsl(0, 0%, 98%) !important;
+  color: hsl(0, 0%, 15%) !important;
+}
+
+dialog::backdrop {
+  background: hsla(0, 0%, 0%, 0.5) !important;
+}
+
+/* Pagefind UI - 強制亮色 */
+.pagefind-ui,
+.pagefind-ui.pagefind-ui--reset,
+[data-pagefind-ui] {
+  --pagefind-ui-primary: hsl(0, 0%, 20%) !important;
+  --pagefind-ui-text: hsl(0, 0%, 15%) !important;
+  --pagefind-ui-background: hsl(0, 0%, 100%) !important;
+  --pagefind-ui-border: hsl(0, 0%, 80%) !important;
+  --pagefind-ui-tag: hsl(0, 0%, 95%) !important;
+}
+
+.pagefind-ui__search-input,
+.pagefind-ui .pagefind-ui__search-input {
+  background: hsl(0, 0%, 100%) !important;
+  background-color: hsl(0, 0%, 100%) !important;
+  color: hsl(0, 0%, 15%) !important;
+  border: 1px solid hsl(0, 0%, 80%) !important;
+}
+
+.pagefind-ui__search-input::placeholder {
+  color: hsl(0, 0%, 50%) !important;
+}
+
+.pagefind-ui__result-link,
+.pagefind-ui__result-title {
+  color: hsl(0, 0%, 15%) !important;
+}
+
+.pagefind-ui__result-excerpt {
+  color: hsl(0, 0%, 30%) !important;
+}
+
+.pagefind-ui__result,
+.pagefind-ui__result-inner {
+  background: hsl(0, 0%, 100%) !important;
+}
+
+.pagefind-ui__result:hover {
+  background: hsl(0, 0%, 96%) !important;
+}
+
+.pagefind-ui__message,
+.pagefind-ui__result-nested {
+  color: hsl(0, 0%, 30%) !important;
+}
+
+/* ============================================
+   側邊欄
+   ============================================ */
+
+nav.sidebar {
+  background: var(--bg-overlay-light) !important;
+}
+
+nav.sidebar a {
+  border-radius: 8px !important;
+  color: hsl(0, 0%, 20%) !important;
+}
+
+nav.sidebar a:hover {
+  background: hsla(0, 0%, 0%, 0.05) !important;
+}
+
+nav.sidebar a[aria-current="page"] {
+  background: hsla(0, 0%, 0%, 0.08) !important;
+  color: hsl(0, 0%, 5%) !important;
+  font-weight: 600;
+}
+
+/* 側邊欄群組標題 */
+.sidebar-content summary,
+.sidebar-content .group-label,
+.sidebar-content .large {
+  color: hsl(0, 0%, 15%) !important;
+  font-weight: 600;
+}
+
+/* 右側目錄 (TOC) */
+.right-sidebar {
+  background: hsla(0, 0%, 100%, 0.92) !important;
+}
+
+.right-sidebar-panel {
+  background: hsla(0, 0%, 100%, 0.95) !important;
+  padding: 1rem !important;
+  border-radius: 8px;
+}
+
+starlight-toc a {
+  color: hsl(0, 0%, 20%) !important;
+}
+
+starlight-toc a:hover {
+  color: hsl(0, 0%, 0%) !important;
+}
+
+.right-sidebar-panel h2,
+starlight-toc h2 {
+  color: hsl(0, 0%, 10%) !important;
+}
+
+/* ============================================
+   程式碼區塊
+   ============================================ */
+
+pre {
+  border-radius: 12px !important;
+  border: 2px solid hsla(0, 0%, 0%, 0.1) !important;
+  background: hsla(0, 0%, 96%, 0.95) !important;
+}
+
+code {
+  color: hsl(0, 0%, 15%) !important;
+}
+
+/* ============================================
+   表格樣式
+   ============================================ */
+
+table {
+  border-collapse: collapse;
+}
+
+th, td {
+  border: 1px solid hsl(0, 0%, 80%) !important;
+  padding: 0.75rem !important;
+}
+
+th {
+  background: hsl(0, 0%, 95%) !important;
+  color: hsl(0, 0%, 10%) !important;
+  font-weight: 700;
+}
+
+/* ============================================
+   連結樣式
+   ============================================ */
+
+a {
+  color: hsl(0, 0%, 20%) !important;
+  text-decoration: underline;
+  text-decoration-color: hsl(0, 0%, 60%);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: hsl(0, 0%, 0%) !important;
+  text-decoration-color: hsl(0, 0%, 30%);
+}
+
+/* ============================================
+   分頁導航 (Pagination)
+   ============================================ */
+
+.pagination-links a {
+  color: hsl(0, 0%, 15%) !important;
+  background: hsla(0, 0%, 100%, 0.9) !important;
+  border: 1px solid hsl(0, 0%, 80%) !important;
+}
+
+.pagination-links a:hover {
+  background: hsl(0, 0%, 100%) !important;
+  border-color: hsl(0, 0%, 60%) !important;
+}
+
+.pagination-links .link-title {
+  color: hsl(0, 0%, 10%) !important;
+}
+
+.pagination-links .link-page {
+  color: hsl(0, 0%, 30%) !important;
+}
+
+/* ============================================
+   響應式設計
+   ============================================ */
+
+@media (max-width: 768px) {
+  [data-page-type="splash"] .hero {
+    padding: 4rem 1rem 3rem !important;
+  }
+
+  [data-page-type="splash"] .hero h1 {
+    font-size: 2rem !important;
+  }
+
+  [data-page-type="splash"] .hero .tagline {
+    font-size: 1.1rem !important;
+  }
+}
+
+/* ============================================
+   工具類別
+   ============================================ */
+
+.color-primary { color: var(--color-primary); }
+.color-secondary { color: var(--color-secondary); }
+.color-tertiary { color: var(--color-tertiary); }
+.color-quaternary { color: var(--color-quaternary); }

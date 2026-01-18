@@ -120,6 +120,17 @@
   --sl-color-bg-inline-code: var(--sl-color-gray-5);
   --sl-color-hairline-light: var(--sl-color-gray-5);
   --sl-color-hairline: var(--sl-color-gray-6);
+
+  /* Pagefind 搜尋 UI（深色模式） */
+  --pagefind-ui-scale: 0.8;
+  --pagefind-ui-primary: var(--color-primary);
+  --pagefind-ui-text: var(--sl-color-gray-1);
+  --pagefind-ui-background: var(--sl-color-gray-6);
+  --pagefind-ui-border: var(--sl-color-gray-5);
+  --pagefind-ui-tag: var(--sl-color-gray-5);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 8px;
+  --pagefind-ui-font: inherit;
 }
 
 /* ============================================
@@ -484,6 +495,92 @@ pre {
   [data-page-type="splash"] .hero .tagline {
     font-size: 1.1rem !important;
   }
+}
+
+/* ============================================
+   搜尋 Dialog (Pagefind)
+   ============================================ */
+
+/* Pagefind UI - 確保使用主題變數 */
+.pagefind-ui,
+.pagefind-ui.pagefind-ui--reset,
+[data-pagefind-ui] {
+  --pagefind-ui-primary: var(--pagefind-ui-primary, var(--color-primary)) !important;
+  --pagefind-ui-text: var(--pagefind-ui-text, var(--sl-color-gray-1)) !important;
+  --pagefind-ui-background: var(--pagefind-ui-background, var(--sl-color-gray-6)) !important;
+  --pagefind-ui-border: var(--pagefind-ui-border, var(--sl-color-gray-5)) !important;
+  --pagefind-ui-tag: var(--pagefind-ui-tag, var(--sl-color-gray-5)) !important;
+}
+
+.pagefind-ui__search-input,
+.pagefind-ui .pagefind-ui__search-input {
+  background: var(--pagefind-ui-background) !important;
+  background-color: var(--pagefind-ui-background) !important;
+  color: var(--pagefind-ui-text) !important;
+  border: 1px solid var(--pagefind-ui-border) !important;
+}
+
+.pagefind-ui__search-input::placeholder {
+  color: var(--sl-color-gray-3) !important;
+}
+
+.pagefind-ui__result-link,
+.pagefind-ui__result-title {
+  color: var(--pagefind-ui-text) !important;
+}
+
+.pagefind-ui__result-excerpt {
+  color: var(--sl-color-gray-2) !important;
+}
+
+.pagefind-ui__result,
+.pagefind-ui__result-inner {
+  background: var(--pagefind-ui-background) !important;
+}
+
+.pagefind-ui__message,
+.pagefind-ui__result-nested {
+  color: var(--sl-color-gray-2) !important;
+}
+
+/* ============================================
+   分頁導航 (Pagination)
+   ============================================ */
+
+.pagination-links a {
+  color: var(--sl-color-text) !important;
+  background: var(--sl-color-bg-nav) !important;
+  border: 1px solid var(--sl-color-hairline-light) !important;
+}
+
+.pagination-links a:hover {
+  background: var(--sl-color-bg-sidebar) !important;
+  border-color: var(--sl-color-gray-4) !important;
+}
+
+/* ============================================
+   右側目錄 (TOC)
+   ============================================ */
+
+.right-sidebar-panel h2,
+starlight-toc h2 {
+  color: var(--sl-color-text) !important;
+}
+
+starlight-toc a {
+  color: var(--sl-color-gray-2) !important;
+}
+
+starlight-toc a:hover {
+  color: var(--sl-color-white) !important;
+}
+
+/* 側邊欄群組標題 */
+.sidebar-content summary,
+.sidebar-content .group-label,
+.sidebar-content .large {
+  color: var(--sl-color-text) !important;
+  font-weight: 600;
 }
 
 /* ============================================
