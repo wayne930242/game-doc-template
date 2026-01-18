@@ -636,9 +636,16 @@ mobile-starlight-toc a:hover {
 }
 
 mobile-starlight-toc .toggle,
+mobile-starlight-toc summary .toggle,
+mobile-starlight-toc details summary .toggle,
 starlight-toc .toggle,
-starlight-toc summary .toggle {
+starlight-toc summary .toggle,
+starlight-toc details summary .toggle,
+span.toggle.sl-flex,
+.toggle.sl-flex {
   color: var(--sl-color-text) !important;
+  background: var(--sl-color-bg-nav) !important;
+  background-color: var(--sl-color-bg-nav) !important;
 }
 
 /* 側邊欄群組標題 */

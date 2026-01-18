@@ -652,8 +652,12 @@ mobile-starlight-toc a:hover {
 }
 
 mobile-starlight-toc .toggle,
-starlight-toc .toggle {
+starlight-toc .toggle,
+span.toggle.sl-flex,
+.toggle.sl-flex {
   color: hsl(0, 0%, 15%) !important;
+  background: hsl(0, 0%, 100%) !important;
+  background-color: hsl(0, 0%, 100%) !important;
 }
 
 /* ============================================
