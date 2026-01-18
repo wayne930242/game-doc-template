@@ -527,6 +527,12 @@ pre {
 .pagefind-ui__result-link,
 .pagefind-ui__result-title {
   color: var(--pagefind-ui-text) !important;
+  background: var(--pagefind-ui-background) !important;
+  background-color: var(--pagefind-ui-background) !important;
+}
+
+.pagefind-ui__result-title a {
+  color: var(--pagefind-ui-text) !important;
 }
 
 .pagefind-ui__result-excerpt {
@@ -534,13 +540,39 @@ pre {
 }
 
 .pagefind-ui__result,
-.pagefind-ui__result-inner {
+.pagefind-ui__result-inner,
+.pagefind-ui__result-nested {
   background: var(--pagefind-ui-background) !important;
+  background-color: var(--pagefind-ui-background) !important;
 }
 
-.pagefind-ui__message,
-.pagefind-ui__result-nested {
+.pagefind-ui__result:hover,
+.pagefind-ui__result-inner:hover {
+  background: var(--sl-color-gray-5) !important;
+  background-color: var(--sl-color-gray-5) !important;
+}
+
+.pagefind-ui__message {
   color: var(--sl-color-gray-2) !important;
+}
+
+/* Pagefind 結果列表容器 */
+.pagefind-ui__results,
+.pagefind-ui__drawer {
+  background: var(--pagefind-ui-background) !important;
+  background-color: var(--pagefind-ui-background) !important;
+}
+
+/* 結果內文字 */
+.pagefind-ui__result-nested,
+.pagefind-ui__result-nested p,
+.pagefind-ui__result-nested a {
+  color: var(--pagefind-ui-text) !important;
+}
+
+.pagefind-ui__result-excerpt mark {
+  background: hsla(var(--color-primary-h), var(--color-primary-s), var(--color-primary-l), 0.3) !important;
+  color: var(--sl-color-white) !important;
 }
 
 /* ============================================
