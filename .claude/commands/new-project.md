@@ -24,13 +24,31 @@ arguments:
 
 ### 1. Gather Information
 
-If `$ARGUMENTS` does not include project_name:
-- Extract game name from PDF filename or ask user
-- Suggest slug format (lowercase, hyphenated)
+使用 AskUserQuestion 工具一次詢問以下問題：
+
+**問題 1: 專案路徑**
+- header: "專案路徑"
+- question: "要將專案建立在哪個路徑？"
+- options:
+  - `../` (預設，與模板同層)
+  - 自訂路徑
+
+**問題 2: 遊戲標題**
+- header: "遊戲標題"
+- question: "這個遊戲的繁體中文標題是什麼？"
+- 從 PDF 檔名提取原文名稱作為參考
+- 讓使用者輸入繁中翻譯
+
+**問題 3: 專案名稱**（若 `$ARGUMENTS` 未提供）
+- header: "專案名稱"
+- question: "專案資料夾與 repo 名稱？"
+- 根據 PDF 檔名建議 slug 格式（lowercase, hyphenated）
 
 Example:
 ```
 PDF: "Blades in the Dark.pdf"
+原文標題: Blades in the Dark
+繁中標題: 暗夜冷鋒 (由使用者輸入)
 建議專案名稱: blades-in-the-dark
 ```
 
@@ -40,22 +58,29 @@ PDF: "Blades in the Dark.pdf"
 # Template repo (current project)
 TEMPLATE_REPO="weihung/game-doc-template"
 
-# Target directory (sibling to template)
-TARGET_DIR="../<project_name>"
+# Target directory (user specified, default: ../)
+TARGET_DIR="<user_specified_path>/<project_name>"
 
 # PDF path (from arguments)
 PDF_PATH="$ARGUMENTS[0]"
+
+# Game title (user specified)
+GAME_TITLE_EN="<extracted_from_pdf>"
+GAME_TITLE_ZH="<user_specified>"
 ```
 
 ### 3. Clone Template
 
 ```bash
+# Navigate to target parent directory
+cd <user_specified_path>
+
 # Clone from GitHub template
 gh repo create <project_name> --template $TEMPLATE_REPO --private --clone
 
 # Or if template is local:
-# cp -r . ../<project_name>
-# cd ../<project_name>
+# cp -r <template_path> <TARGET_DIR>
+# cd <TARGET_DIR>
 # rm -rf .git
 # git init
 ```
@@ -63,7 +88,7 @@ gh repo create <project_name> --template $TEMPLATE_REPO --private --clone
 ### 4. Create GitHub Repository
 
 ```bash
-cd ../<project_name>
+cd <TARGET_DIR>
 
 # Create private repo
 gh repo create <project_name> --private --source=. --remote=origin
@@ -87,10 +112,11 @@ cp "<pdf_path>" data/pdfs/
 ### 6. Update Project Configuration
 
 Edit `docs/astro.config.mjs`:
-- Update `SITE_CONFIG.title` with game name
+- Update `SITE_CONFIG.title` with `GAME_TITLE_ZH` (繁中標題)
 
 Edit `CLAUDE.md`:
-- Update project description if needed
+- Update project description with game name (原文 + 繁中)
+- Example: `# blades-in-the-dark\n\nBlades in the Dark（暗夜冷鋒）PDF 遊戲規則翻譯專案。`
 
 ### 7. Verify Setup
 
@@ -109,11 +135,13 @@ git remote -v
 Inform user:
 ```
 ✓ 專案已建立: <project_name>
+✓ 遊戲標題: <GAME_TITLE_EN>（<GAME_TITLE_ZH>）
+✓ 專案路徑: <TARGET_DIR>
 ✓ GitHub repo: https://github.com/<username>/<project_name>
 ✓ PDF 已複製到: data/pdfs/<filename>
 
 下一步：
-1. cd ../<project_name>
+1. cd <TARGET_DIR>
 2. 執行 /init-doc 開始初始化文件
 ```
 
