@@ -183,6 +183,19 @@ body {
   background-repeat: no-repeat; */
 }
 
+/* 全頁暗色覆蓋層（配合背景圖使用） */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: hsla(var(--bg-h), var(--bg-s), 5%, var(--overlay-opacity));
+  pointer-events: none;
+  z-index: -1;
+}
+
 /* 內容區域半透明遮罩（保持可讀性） */
 .main-pane {
   background: var(--bg-overlay);
