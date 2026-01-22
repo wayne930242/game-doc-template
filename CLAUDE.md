@@ -48,7 +48,8 @@ PDF 遊戲規則文件轉換成繁體中文 Markdown 文件網站。
 ### Commands
 | Command | Description |
 |---------|-------------|
-| `/init-doc` | 初次摘要：建立術語表、拆分章節 |
+| `/new-project` | 建立新專案：從模板建立並設定 GitHub 私人 repo |
+| `/init-doc` | 初次摘要：提取內容、選擇圖片、設定色票、建立術語表 |
 | `/translate` | 開始翻譯：翻譯指定章節或檔案 |
 | `/check-consistency` | 一致性校對：檢查術語使用 |
 | `/term-decision` | 用語權衡：術語選擇與全文替換 |
@@ -67,6 +68,7 @@ PDF 遊戲規則文件轉換成繁體中文 Markdown 文件網站。
 | `scripts/` | Python 處理腳本 |
 | `data/pdfs/` | 原始 PDF 檔案 |
 | `data/markdown/` | 提取的 Markdown |
+| `data/markdown/images/` | 提取的圖片 |
 | `glossary.json` | 術語表 |
 | `style-decisions.json` | 風格決定記錄 |
 
