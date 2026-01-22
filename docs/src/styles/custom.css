@@ -718,3 +718,20 @@ span.toggle.sl-flex,
 .color-secondary { color: var(--color-secondary); }
 .color-tertiary { color: var(--color-tertiary); }
 .color-quaternary { color: var(--color-quaternary); }
+
+/* ============================================
+   引用與強調樣式（不使用斜體）
+   ============================================ */
+
+blockquote,
+blockquote p {
+  font-style: normal;
+}
+
+em,
+i {
+  font-style: normal;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
