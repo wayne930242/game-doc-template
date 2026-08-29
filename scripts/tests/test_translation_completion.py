@@ -210,3 +210,30 @@ def test_completion_rejects_missing_deployable_artifacts(tmp_path: Path) -> None
         str(tmp_path / "docs/dist/index.html"),
         str(tmp_path / "docs/dist/pagefind/pagefind.js"),
     ]
+
+
+def test_completion_can_use_bilingual_progress_file(tmp_path: Path) -> None:
+    _write_progress(tmp_path, ["not_started"])
+    bilingual_progress = tmp_path / "data/translation-progress-bilingual.json"
+    bilingual_progress.write_text(
+        json.dumps(
+            {
+                "_meta": {"total_chapters": 1, "completed": 1},
+                "chapters": [
+                    {"id": "bilingual", "file": "docs/bilingual.md", "status": "completed"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[tuple[list[str], Path]] = []
+
+    report = completion.complete_project(
+        tmp_path,
+        progress_path=Path("data/translation-progress-bilingual.json"),
+        bun_executable=Path("/fake/bun"),
+        runner=_passing_runner(calls),
+    )
+
+    assert report["ok"] is True
+    assert report["progress_file"] == str(bilingual_progress)

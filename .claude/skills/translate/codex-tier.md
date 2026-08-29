@@ -14,7 +14,7 @@ Check `style-decisions.json.codex_tier.enabled`.
   ```
   or `{ "enabled": false }`.
 - **Set** → use it silently. Never ask again for this project.
-- **`enabled: false`** → skip the rest of this file entirely for every run. Draft generation always happens in the Claude session/subagent, exactly as before this feature existed.
+- **`enabled: false`** → skip Codex setup/invocation. Draft generation uses a Claude Agent `sonnet` subagent under the same isolation and wave limits; it does not fall back to drafting three chapters inside the orchestrator context.
 
 ## 2. Codex Availability (only when tiering is enabled)
 
@@ -50,6 +50,8 @@ codex exec \
 - `<PROMPT>` must inline everything Codex needs — it does not have the calling skill's context. For `translate`, include the whole-book summary, current chapter context, complete current source chapter, applicable glossary subset, `style-decisions.json`, `translator-style.md`, the absolute registered draft path, and every hard constraint from `translator-prompt.md`. Do not inline the complete source corpus after `translation-context.json` is ready.
 - `<SCHEMA_FILE>` / `<RESULT_FILE>`: when the calling skill needs structured output, write a JSON Schema matching that prompt's required shape, pass it via `--output-schema`, and read `<RESULT_FILE>` afterward. Ignore the noisy `--json` event stream on stdout; only the schema-constrained result file is reliable.
 - Read `<RESULT_FILE>` (or the written draft file) only after the process exits; do not parse intermediate stream events.
+- Never run more than 3 draft workers concurrently. Pre-register all draft paths sequentially, then start up to three independent `codex exec` processes. Each process receives one complete chapter and one exclusive draft path.
+- Claude Agent fallback uses `sonnet`. The semantic reviewer remains on the current/strong reviewer path and is not downgraded with draft generation.
 
 ## 4. Quality Gate (unconditional)
 
@@ -64,4 +66,4 @@ A Codex-authored draft never skips directly to writeback.
 
 ## 5. Fallback
 
-If the Codex invocation errors, times out, or the process exits non-zero: generate that file's draft directly in the Claude session/subagent instead, and continue the batch. Never surface this as a hard failure to the user — it's a silent per-file fallback.
+If one Codex invocation errors, times out, or exits non-zero: retry or generate only that file's draft with a Claude Agent `sonnet` subagent, while successful sibling workers continue. Never surface a recovered per-file fallback as a hard failure. Reduce later wave concurrency after repeated resource/rate-limit failures.

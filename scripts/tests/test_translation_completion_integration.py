@@ -64,21 +64,21 @@ def test_completion_cli_runs_real_navigation_build_and_search(tmp_path: Path) ->
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("# Example Chapter\n\nComplete source.\n", encoding="utf-8")
     target = "docs/src/content/docs/example-section/index.md"
-    _write_json(
-        tmp_path / "data/translation-progress.json",
-        {
-            "_meta": {"total_chapters": 1, "completed": 1},
-            "chapters": [
-                {
-                    "id": "example-section-index",
-                    "file": target,
-                    "source": "data/markdown/YOUR-RULEBOOK_pages.md",
-                    "source_pages": "1-2",
-                    "status": "completed",
-                }
-            ],
-        },
-    )
+    progress = {
+        "_meta": {"total_chapters": 1, "completed": 1},
+        "chapters": [
+            {
+                "id": "example-section-index",
+                "file": target,
+                "source": "data/markdown/YOUR-RULEBOOK_pages.md",
+                "source_pages": "1-2",
+                "status": "completed",
+            }
+        ],
+    }
+    _write_json(tmp_path / "data/translation-progress.json", progress)
+    alternate_progress = Path("data/translation-progress-bilingual.json")
+    _write_json(tmp_path / alternate_progress, progress)
     target_path = tmp_path / target
     target_path.parent.mkdir(parents=True, exist_ok=True)
     target_path.write_text(
@@ -107,6 +107,8 @@ def test_completion_cli_runs_real_navigation_build_and_search(tmp_path: Path) ->
             str(SCRIPT),
             "--project-root",
             str(tmp_path),
+            "--progress-file",
+            str(alternate_progress),
             "--bun",
             str(bun),
             "--json",
@@ -119,6 +121,7 @@ def test_completion_cli_runs_real_navigation_build_and_search(tmp_path: Path) ->
     assert result.returncode == 0, result.stderr or result.stdout
     report = json.loads(result.stdout)
     assert report["ok"] is True
+    assert report["progress_file"] == str(tmp_path / alternate_progress)
     assert len(report["checks"]) == 7
     assert (tmp_path / "docs/dist/index.html").is_file()
     assert (tmp_path / "docs/dist/pagefind/pagefind.js").is_file()

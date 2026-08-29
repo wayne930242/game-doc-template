@@ -33,13 +33,13 @@ uv run python scripts/progress_edit.py --create-if-missing
 Resolve scope without a confirmation pause:
 
 - explicit file or pattern: process only matching entries;
-- `next`: process the next pending checkpoint batch;
+- `next`: process the next pending draft wave;
 - no arguments or `all`: process every pending entry and continue across checkpoint batches.
 
 Select `in_progress` before `not_started`, preserving chapter order within each status:
 
 ```bash
-uv run python scripts/progress_read.py --next 5 --json
+uv run python scripts/progress_read.py --next 3 --json
 ```
 
 Resolve the optional Codex draft tier once per project using [`codex-tier.md`](./codex-tier.md). This provider preference does not change the translation or review contract.
@@ -96,14 +96,17 @@ uv run python scripts/term_read.py --fail-on-missing --fail-on-forbidden
 
 **Complete when:** context status is `ready`, every chapter has a summary and role, and no unresolved ambiguity remains.
 
-### 3. Build one complete chapter draft
+### 3. Build a bounded wave of complete chapter drafts
 
-For the next selected file:
+Select at most three ready chapters. A normal wave uses a maximum of 3 lower-cost draft workers.
 
-1. Mark it `in_progress`.
-2. Register and obtain its draft path through `draft.py`; do not construct a draft path manually.
-3. Read only the current full source chapter plus the reusable context, glossary, style decisions, and translator style.
-4. Generate the draft using [`translator-prompt.md`](./translator-prompt.md), either in the current session or through the configured Codex tier.
+Register every draft path sequentially before dispatch:
+
+1. In chapter order, mark each wave entry `in_progress`.
+2. In the same order, register and obtain every draft path through `draft.py`; do not construct draft paths manually.
+3. Freeze each worker's inputs: current full source chapter, reusable context, glossary subset, style decisions, and translator style.
+4. Dispatch all wave draft workers concurrently using [`translator-prompt.md`](./translator-prompt.md) and the provider policy in [`codex-tier.md`](./codex-tier.md).
+5. Collect every result before mutating shared state. A worker may write only its exclusive registered draft and must not modify glossary, context, progress, source chapters, navigation, or the draft manifest.
 
 ```bash
 uv run python scripts/progress_edit.py --file <TARGET_FILE> --status in_progress
@@ -118,7 +121,9 @@ Delegated work receives absolute project, target, and draft paths. The translato
 - applicable glossary entries;
 - style decisions and [`translator-style.md`](./translator-style.md).
 
-**Complete when:** an isolated draft contains a complete translation of every source block.
+If one worker fails, retry or fall back for that chapter without cancelling successful siblings. Reduce the next wave below three after repeated resource/rate-limit failures. A chapter-local ambiguity blocks only that chapter; group any shared-term questions at the wave boundary before validating affected drafts.
+
+**Complete when:** every successful worker has an isolated complete chapter draft, and failures/ambiguities are attached only to affected entries.
 
 ### 4. Validate structure deterministically
 
@@ -135,7 +140,7 @@ Repair only reported structural differences, then rerun until the command exits 
 
 ### 5. Review semantics once
 
-Dispatch one semantic reviewer using [`semantic-reviewer-prompt.md`](./semantic-reviewer-prompt.md). It checks completeness, mechanics fidelity, unsupported additions, glossary use, and natural zh-TW. It does not repeat the deterministic Markdown audit.
+For each returned draft, dispatch one semantic reviewer using [`semantic-reviewer-prompt.md`](./semantic-reviewer-prompt.md). Independent drafts may validate and review concurrently. The reviewer checks completeness, mechanics fidelity, unsupported additions, glossary use, and natural zh-TW. It does not repeat the deterministic Markdown audit.
 
 - pass: continue to writeback;
 - fail: use [`targeted-refiner-prompt.md`](./targeted-refiner-prompt.md) to edit only reported blocks, then rerun deterministic validation;
@@ -146,7 +151,7 @@ Dispatch one semantic reviewer using [`semantic-reviewer-prompt.md`](./semantic-
 
 ### 6. Write back and continue
 
-Write back first and branch on its exit code:
+After the wave's draft/review work settles, write back in chapter order. For each chapter, write back first and branch on its exit code:
 
 ```bash
 uv run python scripts/draft.py --skill translate writeback <TARGET_FILE>
@@ -198,7 +203,7 @@ This command regenerates the final homepage and sidebar navigation, rechecks glo
 
 ## Automatic continuation and stop conditions
 
-Continue without interaction through scope selection, checkpoint batches, passing chapters, deterministic repairs, progress updates, navigation regeneration, and the final website handoff when all chapters complete.
+Continue without interaction through three-worker draft waves, passing chapters, deterministic repairs, ordered progress/writeback, navigation regeneration, and the final website handoff when all chapters complete.
 
 Stop or ask only for:
 

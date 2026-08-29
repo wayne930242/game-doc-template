@@ -68,7 +68,7 @@ Convert PDF game rulebooks into a Traditional Chinese Markdown documentation sit
 | Command               | Description                                                           |
 | --------------------- | --------------------------------------------------------------------- |
 | `/new-project`        | Create a new project from template and set up a private GitHub repo   |
-| `/init-doc`           | Initial setup: extract content, pick images/theme, and build glossary |
+| `/init-doc`           | Initialize, verify, then auto-route to the selected full translation mode |
 | `/chapter-split`      | Split extracted Markdown into semantic docs pages and regenerate nav  |
 | `/translate`          | Translate with reusable context; whole-book completion builds the final site |
 | `/super-translate`    | Deprecated compatibility entry; forwards to `/translate`             |
@@ -106,10 +106,10 @@ Convert PDF game rulebooks into a Traditional Chinese Markdown documentation sit
 ### Workflow
 
 1. Use `new-project` skill to initialize a new project (when needed)
-2. Use `init-doc` skill to complete project-level setup, extraction orchestration, and initial terminology mapping
+2. Use `init-doc` skill to complete setup, extraction, terminology, and context, then automatically route to the selected full translation skill after its gate passes
 3. Use `chapter-split` skill when extracted Markdown needs deterministic chapter/file structuring or re-splitting
 4. Use `term-decision` skill to handle terminology decisions and batch replacements
-5. Use `translate` for focused or whole-book translation (use `bilingual-translate` for bilingual mode), and create one simple progress commit after each completed batch (`progress: X/Y`)
+5. `init-doc` normally enters `translate all` or `bilingual-translate all`; invoke those skills directly only for focused work or resume. Draft waves use at most three isolated lower-cost workers, followed by ordered writeback and `progress: X/Y` commits
 6. Use `fix-ref` skill to replace printed page references with internal links
 7. Use `check-consistency` skill to validate terminology and style consistency
 8. Use `check-completeness` skill to check rule content completeness

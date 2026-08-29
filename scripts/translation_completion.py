@@ -33,13 +33,23 @@ def parse_args() -> argparse.Namespace:
         description="完成全書翻譯的導覽、驗證與網站建置 handoff。"
     )
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
+    parser.add_argument(
+        "--progress-file",
+        type=Path,
+        default=PROGRESS_PATH,
+        help="要驗證的翻譯進度檔。",
+    )
     parser.add_argument("--bun", type=Path, help="Bun 執行檔路徑。")
     parser.add_argument("--json", action="store_true", help="輸出 JSON 報告。")
     return parser.parse_args()
 
 
-def _read_progress(root: Path) -> dict[str, Any]:
-    path = root / PROGRESS_PATH
+def _resolve_progress_path(root: Path, progress_path: Path) -> Path:
+    return progress_path if progress_path.is_absolute() else root / progress_path
+
+
+def _read_progress(root: Path, progress_path: Path) -> dict[str, Any]:
+    path = _resolve_progress_path(root, progress_path)
     if not path.is_file():
         raise CompletionError("progress_missing", f"找不到翻譯進度：{path}")
     try:
@@ -114,10 +124,11 @@ def run_cmd(cmd: list[str], cwd: Path) -> CommandResult:
     }
 
 
-def _base_report(root: Path) -> dict[str, Any]:
+def _base_report(root: Path, progress_path: Path = PROGRESS_PATH) -> dict[str, Any]:
     return {
         "ok": False,
         "project_root": str(root),
+        "progress_file": str(_resolve_progress_path(root, progress_path)),
         "progress": {"completed": 0, "total": 0},
         "checks": [],
         "dist": str(root / "docs/dist"),
@@ -127,14 +138,15 @@ def _base_report(root: Path) -> dict[str, Any]:
 def complete_project(
     root: Path,
     *,
+    progress_path: Path = PROGRESS_PATH,
     bun_executable: Path | None = None,
     runner: Runner = run_cmd,
 ) -> dict[str, Any]:
     """執行全書完成後的 deterministic 網站 handoff。"""
     root = root.resolve()
-    report = _base_report(root)
+    report = _base_report(root, progress_path)
     try:
-        progress = _read_progress(root)
+        progress = _read_progress(root, progress_path)
     except CompletionError as exc:
         report["error"] = {"code": exc.code, "message": str(exc)}
         return report
@@ -227,7 +239,7 @@ def main() -> int:
     args = parse_args()
     explicit_bun = find_bun(args.bun) if args.bun is not None else None
     if args.bun is not None and explicit_bun is None:
-        report = _base_report(args.project_root.resolve())
+        report = _base_report(args.project_root.resolve(), args.progress_file)
         report["error"] = {
             "code": "bun_missing",
             "message": f"找不到指定的 Bun：{args.bun}",
@@ -235,6 +247,7 @@ def main() -> int:
     else:
         report = complete_project(
             args.project_root,
+            progress_path=args.progress_file,
             bun_executable=explicit_bun,
         )
     if args.json:

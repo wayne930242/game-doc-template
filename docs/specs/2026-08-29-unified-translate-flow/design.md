@@ -41,6 +41,16 @@ The module intentionally ignores translated prose and semantic correctness. Thos
 
 `/super-translate` becomes a compatibility adapter that forwards its scope to `/translate`; it owns no translation pipeline.
 
+### Draft-wave seam
+
+The existing skill orchestration boundary remains the concurrency seam; no script attempts to spawn model workers. For each wave the orchestrator first performs every shared mutation (`in_progress`, `draft.py path`) sequentially, then dispatches up to three lower-cost workers with immutable, fully inlined chapter inputs and distinct draft paths. Returned drafts can enter independent validation/review work, but writeback and checkpoint state converge in chapter order.
+
+This shape keeps provider-specific worker adapters behind `codex-tier.md`: Codex uses `gpt-5.6-luna` at low effort, Claude Agent fallback uses `sonnet`, and another host may supply an equivalent lower-cost translation-capable worker. The translate skills know the concurrency and isolation contract, not provider setup details.
+
+### Initialization-routing seam
+
+`init-doc` already owns the final verified initialization state and `translation_mode.mode`, so it performs the one routing decision after `init_handoff_gate.py` passes. It invokes the selected translation skill with `all`; downstream skills retain ownership of translation and site completion.
+
 ### Completion-handoff module
 
 Public CLI:
@@ -88,7 +98,7 @@ Rejected. Per-chapter semantic review catches rule drift before it becomes commi
 
 ## Decisions and trade-offs
 
-- Sequential chapter processing is the initial default. It preserves cumulative terminology and context decisions; bounded parallel drafting can be evaluated later.
+- Draft generation now uses bounded waves of three after the reusable context and glossary are ready. Shared-state setup and ordered writeback remain sequential, preserving deterministic progress and checkpoint history.
 - Checkpoint commits remain, but they no longer pause the run.
 - Navigation regeneration occurs at checkpoints only when translated navigation metadata changed.
 - A second semantic review is conditional, not automatic.
@@ -102,6 +112,8 @@ Rejected. Per-chapter semantic review catches rule drift before it becomes commi
 - A compatibility wrapper could preserve obsolete behavior accidentally. Forward testing must confirm that `super-translate` contains no reviewer/refiner loop of its own.
 - A failed writeback followed by an independent progress update could create false completion. The skill must branch on the writeback exit code, and integration evidence must prove writeback precedes completion.
 - A stale navigation or failed site build could leave translated Markdown committed without a deployable website. The completion CLI reruns navigation and fails closed on build/search errors.
+- Concurrent workers could overwrite the draft manifest or shared decisions. The orchestrator registers paths before dispatch and workers receive read-only shared inputs plus one exclusive draft path.
+- A shared ambiguity discovered mid-wave could invalidate sibling terminology. Workers report ambiguities instead of mutating the glossary; the orchestrator groups the decision at the wave boundary and revalidates affected drafts.
 
 ## Correctness method
 

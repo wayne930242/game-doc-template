@@ -38,21 +38,21 @@ If a task-tracking tool is available in this session, mirror per-file progress i
    - `chapters.json` with `"mode": "bilingual"`
    If any missing or mode mismatch, stop and ask user to run `/init-doc` first.
 
-2. Resolve target files from `$ARGUMENTS` or auto-select using progress script:
+2. Resolve target files from `$ARGUMENTS` or auto-select a wave using the progress script:
    ```bash
-   uv run python scripts/progress_read.py --progress-file data/translation-progress-bilingual.json --next 5 --json
+   uv run python scripts/progress_read.py --progress-file data/translation-progress-bilingual.json --next 3 --json
    ```
-   - Selects `not_started` files by default. If user explicitly requests resume → use `--status in_progress`.
+   - Select `in_progress` before `not_started` and preserve chapter order.
    - If the progress file does not exist, create it first:
      ```bash
      uv run python scripts/progress_edit.py --progress-file data/translation-progress-bilingual.json --create-if-missing
      ```
 
-3. Display selected files to user in Traditional Chinese before proceeding.
+3. Do not pause for scope confirmation when invoked with `all` or from `init-doc`; continue across waves automatically.
 
 4. Resolve the project's Codex draft-tiering preference per `../translate/codex-tier.md` §1 (asked once per project, then silent).
 
-**Verification:** Target file list confirmed; all required files and mode settings present; Codex tiering preference resolved.
+**Verification:** Target scope is resolved; all required files and mode settings present; Codex tiering preference resolved.
 
 ### Step 2: Terminology Preflight (Fail-Closed)
 
@@ -65,13 +65,13 @@ If preflight fails, stop and fix terminology first.
 
 **Verification:** Both commands exit 0.
 
-### Step 3: Prepare Bilingual Draft
+### Step 3: Prepare an Isolated Bilingual Draft Wave
 
-For each target file, determine the source English markdown path from `data/markdown/` (the `_pages.md` source referenced in `chapters.json`).
+Select a maximum of 3 lower-cost draft workers per wave. For each target file, determine the source English markdown path from `data/markdown/` (the `_pages.md` source referenced in `chapters.json`).
 
 Determine the output path: `docs/src/content/docs/bilingual/<section>/<file>.md` (from `chapters.json` + `mode=bilingual`).
 
-Run bilingual_prep.py to generate the draft with placeholders in `.state/bilingual-translate/drafts/`:
+Register every draft path sequentially before dispatch by running `bilingual_prep.py` in chapter order to generate drafts with placeholders in `.state/bilingual-translate/drafts/`:
 
 ```bash
 uv run python scripts/bilingual_prep.py <SOURCE_FILE> <DRAFT_FILE>
@@ -79,15 +79,15 @@ uv run python scripts/bilingual_prep.py <SOURCE_FILE> <DRAFT_FILE>
 
 **Verification:** Draft file exists and contains `<!-- TODO: 翻譯 -->` placeholders.
 
-### Step 4: Translate Per File
+### Step 4: Translate the Wave
 
-For each target file:
+Freeze each file's glossary/style/source input, then dispatch up to three draft workers concurrently. Each worker may edit only its assigned bilingual draft and must not modify glossary, context, progress, source, navigation, or another draft. For each target file:
 
 1. If using task tracking, mark the item `in_progress`
 2. Read draft, `glossary.json`, and `style-decisions.json`
 3. For each `<!-- TODO: 翻譯 -->` placeholder: replace it with the Chinese translation of the English text in the immediately following blockquote line(s), following `../translate/translator-style.md` for register, proper-noun policy, POV, terminology glossing, and sentence structure.
 
-   If Codex tiering is enabled and available (`../translate/codex-tier.md` §2), delegate this placeholder-filling to Codex per `../translate/codex-tier.md` §3 — the prompt MUST state that only `<!-- TODO: 翻譯 -->` placeholders may be replaced and every line starting with `>` must be left byte-for-byte untouched. On any Codex failure, fall back to doing it yourself per `../translate/codex-tier.md` §5.
+   If Codex tiering is enabled and available (`../translate/codex-tier.md` §2), delegate this placeholder-filling to Codex per `../translate/codex-tier.md` §3 — the prompt MUST state that only `<!-- TODO: 翻譯 -->` placeholders may be replaced and every line starting with `>` must be left byte-for-byte untouched. On any Codex failure, use the per-chapter Claude Agent `sonnet` fallback in `../translate/codex-tier.md` §5.
 4. Update frontmatter `title` to Traditional Chinese; add `bilingual: true` if not present
 5. Single-pass self-review — unconditional and identical whether Codex or you filled the placeholders:
    - Any `<!-- TODO: 翻譯 -->` left untranslated?
@@ -96,12 +96,14 @@ For each target file:
    - English blockquote lines (starting with `>`) preserved exactly — no modifications?
    - Content contamination (paragraphs with no source)?
    - Native Chinese quality: any sentence that keeps English clause order/structure instead of natural Chinese syntax? Any 四字成語 or literary flourish that isn't grounded in the source's meaning? Any technical term translated where `glossary.json` or `style-decisions.json` says to keep the original English form?
-6. Write final file to `docs/src/content/docs/bilingual/<path>`
+6. After every worker returns, write back in chapter order to `docs/src/content/docs/bilingual/<path>`
 7. Update progress:
    ```bash
    uv run python scripts/progress_edit.py --progress-file data/translation-progress-bilingual.json --file <TARGET_FILE> --status completed
    ```
 8. If using task tracking, mark the item completed
+
+One worker failure falls back only that chapter per `../translate/codex-tier.md`; successful siblings continue. Reduce later waves after repeated resource/rate-limit failures. Group shared terminology ambiguities at the wave boundary and revalidate affected drafts before writeback.
 
 **Verification:** Self-review checklist passes; output file written; progress JSON updated.
 
@@ -134,7 +136,17 @@ uv run python scripts/term_read.py --fail-on-missing --fail-on-forbidden
 
 If using task tracking, mark the final verification item completed.
 
-**Verification:** Both commands exit 0; `data/translation-progress-bilingual.json` shows all target files `completed`.
+Invoke `check-consistency`. When every bilingual progress entry is completed, invoke `check-completeness`, then run:
+
+```bash
+uv run python scripts/translation_completion.py \
+  --progress-file data/translation-progress-bilingual.json \
+  --json
+```
+
+Require zero exit before reporting the bilingual book/site complete. Partial scopes do not run the final website handoff.
+
+**Verification:** Both terminology commands exit 0; requested entries are completed; a whole-book run also produces `docs/dist/` and passes search verification.
 
 ## Red Flags
 

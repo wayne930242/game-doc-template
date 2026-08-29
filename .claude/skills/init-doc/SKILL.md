@@ -17,6 +17,7 @@ Initialize translation baseline from PDF extraction to chaptered docs, style dec
 Before ANY action, create tasks using TaskCreate:
 - One task per major phase (extraction, formatting, images/theme, terminology, chapter split, progress tracker, translation context)
 - One task for final handoff gate
+- One task for automatic translation dispatch
 
 ## Interaction Rules
 
@@ -58,6 +59,7 @@ Create TaskCreate items for:
 - progress tracker creation
 - reusable translation context
 - final handoff gate
+- automatic translation dispatch
 
 **Verification:** All tasks created with correct descriptions; task list matches the phases above.
 
@@ -304,7 +306,7 @@ uv run python scripts/translation_context.py status --require-ready
 
 **Verification:** `data/translation-context.json` exists, covers every progress entry, contains no unresolved ambiguities, and reports `ready`.
 
-### Step 11: Final Gate and Handoff (Fail-Closed)
+### Step 11: Final Gate (Fail-Closed)
 
 Run one-shot handoff gate:
 
@@ -314,7 +316,20 @@ uv run python scripts/init_handoff_gate.py
 
 If any gate fails, stop and fix before completion.
 
-**Verification:** `init_handoff_gate.py` exits 0; all tasks marked `completed`.
+**Verification:** `init_handoff_gate.py` exits 0; all initialization tasks are `completed`, and the automatic translation dispatch task is ready.
+
+### Step 12: Automatically Start Full Translation
+
+Only after Step 11 exits zero, read `style-decisions.json.translation_mode.mode` and dispatch the complete pending book without another confirmation prompt:
+
+- `full` → invoke `/translate all`;
+- `bilingual` → invoke `/bilingual-translate all`.
+
+Do not dispatch either translation skill when the gate fails, the mode is absent/invalid, or the user has interrupted the run. Return the downstream translation skill's progress, completion checks, and final website result as the completion of this `init-doc` invocation; do not report initialization as the final outcome while translation is still running.
+
+Mark the automatic translation dispatch task `completed` only after the downstream skill returns its final result.
+
+**Verification:** the selected translation skill receives `all`, no manual command is required between initialization and translation, and the dispatch task closes only after downstream completion.
 
 ## Flowchart
 
@@ -338,7 +353,10 @@ digraph init_doc {
     context [label="Persist reusable\ntranslation context", shape=box];
     gate [label="Final handoff\ngate", shape=box];
     gate_ok [label="Gate\npasses?", shape=diamond];
-    done [label="Done →\ntranslate", shape=box];
+    mode [label="Translation\nmode", shape=diamond];
+    translate [label="translate all", shape=box];
+    bilingual [label="bilingual-translate all", shape=box];
+    done [label="Translated site\ncomplete", shape=box];
     fix [label="Fix & retry", shape=box];
 
     cleanup -> tasks -> extract;
@@ -357,7 +375,11 @@ digraph init_doc {
     split_ok -> fix [label="no"];
     progress -> context -> gate;
     gate -> gate_ok;
-    gate_ok -> done [label="yes"];
+    gate_ok -> mode [label="yes"];
+    mode -> translate [label="full"];
+    mode -> bilingual [label="bilingual"];
+    translate -> done;
+    bilingual -> done;
     gate_ok -> fix [label="no"];
 }
 ```
@@ -366,7 +388,7 @@ digraph init_doc {
 
 1. Keep tasks updated via TaskUpdate at every step.
 2. Mark blockers immediately and include failing command/context.
-3. Close tasks only after final gate passes.
+3. Close initialization tasks only after the final gate passes; close automatic translation dispatch only after the downstream translation skill returns.
 
 ## When to Stop and Ask for Help
 

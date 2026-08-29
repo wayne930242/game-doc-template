@@ -29,6 +29,12 @@
 - Resume order SHALL be `in_progress` first, then `not_started`, preserving chapter order within each group.
 - Checkpoint batches MAY remain for bounded work and Git commits, but SHALL NOT pause to ask whether the next batch should begin.
 - The workflow SHALL continue until all selected work completes, a user-owned ambiguity blocks the affected work, an unrecoverable validation failure occurs, or the user interrupts it.
+- A whole-book run SHALL group ready chapters into waves of at most three.
+- Before parallel dispatch, the orchestrator SHALL mark and register every wave draft sequentially so workers never race on the shared progress or draft manifest.
+- Draft workers SHALL run concurrently only against their own registered draft paths and SHALL treat glossary, style, context, progress, source chapters, and navigation as read-only.
+- Codex drafting SHALL use the configured `gpt-5.6-luna` low-effort tier. A Claude Agent fallback SHALL use `sonnet`; equivalent providers SHALL choose a lower-cost translation-capable worker. Semantic review remains a separate stronger/current-model gate.
+- Deterministic validation and semantic review MAY proceed independently per returned draft, but source writeback, progress completion, navigation metadata changes, and checkpoint commits SHALL occur in chapter order under the orchestrator.
+- A worker failure SHALL silently retry or fall back for that chapter without cancelling successful siblings. Repeated resource failures MAY reduce later wave concurrency.
 
 ### 4. Per-chapter translation inputs and output
 
@@ -78,6 +84,14 @@
 - Any navigation, validation, build, or search-verification failure SHALL return non-zero and prevent the workflow from reporting whole-book completion.
 - `final-proofread` SHALL be reported as a separate publication step and SHALL NOT run automatically from `/translate`.
 
+### 7A. Initialization handoff
+
+- `init-doc` SHALL invoke translation automatically only after `init_handoff_gate.py` exits zero.
+- `style-decisions.json.translation_mode.mode == "full"` SHALL route to `/translate all`.
+- `style-decisions.json.translation_mode.mode == "bilingual"` SHALL route to `/bilingual-translate all`.
+- The downstream skill SHALL own all translation checkpoint commits, completion checks, and final website handoff; `init-doc` SHALL not duplicate them.
+- A user interruption or failed initialization gate SHALL prevent automatic translation dispatch.
+
 ### 8. `super-translate` deprecation
 
 - The `super-translate` skill SHALL become a thin compatibility wrapper around the unified `/translate` flow.
@@ -113,6 +127,7 @@
 - Unit tests for context creation, fingerprint reuse/invalidation, ordered chapter mapping, and unresolved-term persistence.
 - Unit tests for deterministic Markdown structure comparison, including a passing equivalent document and failures for dropped/reordered headings, lists, tables, fences, images, frontmatter, and MDX blocks.
 - CLI tests for the whole-book completion handoff, including incomplete-progress refusal, ordered fail-closed checks, successful build/search verification, and failure propagation.
+- Skill-contract tests for init mode routing, three-worker bounded draft waves, sequential shared-state mutation, ordered writeback, and alternate bilingual progress completion.
 - Regression test that resume order is `in_progress` before `not_started`.
 - Integration test over a three-chapter fixture proving context preparation, `0/3 → 1/3 → 3/3` persistence, writeback-before-completed ordering, and interruption/resume.
 - Navigation tests proving translated metadata is reflected at checkpoints without hiding untranslated chapters.
