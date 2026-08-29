@@ -1,261 +1,216 @@
 ---
 name: translate
-description: Use when translating one file, one section, or all docs with glossary and style constraints.
+description: Use when translating one chapter, a scoped set, or a complete rulebook with reusable whole-book context, glossary control, deterministic Markdown validation, and one semantic review.
 user-invocable: true
 ---
 
 # Translate Document
 
-> 模型建議：本技能為主執行緒流程，依成本路由決策建議於 **sonnet** 會話執行；高階模型會話亦可執行，但屬超規格花費。
+Translate complete Markdown chapters into Traditional Chinese. The same workflow handles focused fixes and unattended whole-book translation.
 
-## Overview
+**Leading principle:** understand the whole book once, then translate every chapter in that shared context. A chapter translation is complete prose, never a summary.
 
-Single-pass translation of markdown content to Traditional Chinese with glossary compliance, draft isolation, progress tracking, and one Git checkpoint commit per completed batch.
+## Authoritative state
 
-**Core principle:** Draft first, verify before writeback, never overwrite source with unverified output.
+| File | Responsibility |
+| --- | --- |
+| `data/translation-context.json` | Whole-book and per-chapter source context; no authoritative term mappings |
+| `glossary.json` | The only authoritative term mappings |
+| `style-decisions.json` | User-approved translation and presentation decisions |
+| `data/translation-progress.json` | Chapter order and completion state |
+| `.state/translate/` | Rebuildable isolated drafts |
 
-## Progress Tracking
+## Process
 
-Authoritative state lives in `data/translation-progress.json`, kept in sync via `progress_edit.py`/`progress_read.py` at each step below (see Progress Sync Contract) — this is what later runs and other skills read, and it survives across sessions.
+### 1. Resolve project and scope
 
-If a task-tracking tool is available in this session, mirror per-file progress into it for visibility (one task per target file, one for batch checkpoint, one for final verification). Treat it as optional visibility on top of the progress file, not the source of truth.
+Require `chapters.json`, `glossary.json`, and `style-decisions.json`. Create the progress tracker when absent:
 
-## The Process
+```bash
+uv run python scripts/progress_edit.py --create-if-missing
+```
 
-### Step 1: Resolve Scope and Preconditions
+Resolve scope without a confirmation pause:
 
-1. Verify required files exist:
-   - `glossary.json`
-   - `style-decisions.json`
-   - `data/translation-progress.json`
-   If any are missing, stop and ask user to run `/init-doc` first.
+- explicit file or pattern: process only matching entries;
+- `next`: process the next pending checkpoint batch;
+- no arguments or `all`: process every pending entry and continue across checkpoint batches.
 
-2. Resolve target files:
-   - If `$ARGUMENTS` specifies concrete file paths or a scoped pattern → use those directly as the current batch.
-   - Otherwise (no args, `all`, or `next`) → **auto-select using progress script**:
-     ```bash
-     uv run python scripts/progress_read.py --next 5 --json
-     ```
-     1. Select files with status `not_started`, in chapter order.
-     2. If user explicitly requests resume → include `in_progress` files: `--status in_progress`.
-     3. Display selected files to user in Traditional Chinese before proceeding:
-        ```
-        翻譯進度：已完成 X / Y 個章節
-        本批次已從進度表自動選取以下檔案：
-        - [in_progress 繼續] <file>
-        - [not_started 新增] <file>
-        …
-        是否繼續？或請指定其他範圍。
-        ```
-     4. Wait for user confirmation or override.
-   - The selected target set for this run is one batch. If only one file is selected, that single file is the batch.
+Select `in_progress` before `not_started`, preserving chapter order within each status:
 
-3. Resolve the project's Codex draft-tiering preference per `./codex-tier.md` §1 (asked once per project, then silent).
+```bash
+uv run python scripts/progress_read.py --next 5 --json
+```
 
-**Verification:** Target file list confirmed; all required files exist; Codex tiering preference resolved.
+Resolve the optional Codex draft tier once per project using [`codex-tier.md`](./codex-tier.md). This provider preference does not change the translation or review contract.
 
-### Step 2: Terminology Preflight (Fail-Closed)
+**Complete when:** scope is known, required project state exists, and no user confirmation is pending.
+
+### 2. Prepare or reuse whole-book context
+
+Inspect context state:
+
+```bash
+uv run python scripts/translation_context.py status --json
+```
+
+- missing context or `full_refresh_required`: initialize and run [`context-prompt.md`](./context-prompt.md). Read every unique source, covering all chapters in `chapters.json` order, before drafting any translation. Then run the terminology candidate workflow below.
+- `decision_refresh_required`: retain the source summaries; reconcile glossary/style decisions, rerun the terminology candidate workflow only when glossary content changed, and finalize again.
+- `ready`: reuse the existing context without rereading the complete source corpus.
+
+Initialize when needed:
+
+```bash
+uv run python scripts/translation_context.py init
+```
+
+The context pass must produce:
+
+- a whole-book summary of subject, structure, tone, core rules/concepts, world information, and translation priorities;
+- one summary and functional role for every chapter;
+- chapter dependencies and relevant glossary term keys;
+- a queue containing only genuine unresolved ambiguities.
+
+For a new or fully refreshed context, run the existing terminology candidate workflow once against the complete corpus:
+
+```bash
+uv run python scripts/term_generate.py --min-frequency 2
+uv run python scripts/term_cal_batch.py
+uv run python scripts/validate_glossary.py
+```
+
+Reuse `terminology-management` to approve direct, unambiguous mappings. Ask the user only when multiple plausible readings affect mechanics, meaning, names, wordplay, cultural tone, or cross-chapter consistency. Group related questions. Persist each answer in `glossary.json` and remove it from the context's unresolved queue.
+
+When context was created or decisions were refreshed, finalize only after context and terms are ready:
+
+```bash
+uv run python scripts/translation_context.py finalize
+```
+
+On every invocation, including reuse of a ready context, run the inexpensive terminology guards:
 
 ```bash
 uv run python scripts/validate_glossary.py
 uv run python scripts/term_read.py --fail-on-missing --fail-on-forbidden
 ```
 
-If preflight fails, stop and fix terminology first.
+**Complete when:** context status is `ready`, every chapter has a summary and role, and no unresolved ambiguity remains.
 
-**Verification:** Both commands exit 0.
+### 3. Build one complete chapter draft
 
-### Step 3: Resolve Translation Mode
+For the next selected file:
 
-Read `style-decisions.json.translation_mode.mode`.
-If missing, ask user in Traditional Chinese:
-- **完整翻譯**：完整翻譯所有內容，保留原始結構與細節
-- **摘要翻譯**：精簡翻譯重點規則，省略範例與冗長說明
-
-Persist mode before translating.
-
-**Verification:** `translation_mode.mode` persisted in `style-decisions.json`.
-
-### Step 4: Prepare Draft Directory
-
-For each target file, obtain its draft path (this also creates the directory):
+1. Mark it `in_progress`.
+2. Register and obtain its draft path through `draft.py`; do not construct a draft path manually.
+3. Read only the current full source chapter plus the reusable context, glossary, style decisions, and translator style.
+4. Generate the draft using [`translator-prompt.md`](./translator-prompt.md), either in the current session or through the configured Codex tier.
 
 ```bash
+uv run python scripts/progress_edit.py --file <TARGET_FILE> --status in_progress
 uv run python scripts/draft.py --skill translate path <TARGET_FILE>
 ```
 
-Use the printed path as `<DRAFT_FILE>` for that file.
+Delegated work receives absolute project, target, and draft paths. The translator receives:
 
-**Verification:** Draft path returned; directory exists.
+- the complete current source chapter;
+- `book_summary`;
+- the matching chapter summary, role, dependencies, and key terms;
+- applicable glossary entries;
+- style decisions and [`translator-style.md`](./translator-style.md).
 
-### Step 5: Translate Per File
+**Complete when:** an isolated draft contains a complete translation of every source block.
 
-For each target file:
-
-1. If using task tracking, mark the item `in_progress`
-2. Update progress:
-   ```bash
-   uv run python scripts/progress_edit.py --file <TARGET_FILE> --status in_progress
-   ```
-3. Read source content, `glossary.json`, and `style-decisions.json`（特別包含 `translation_notes`）
-4. Get draft path:
-   ```bash
-   DRAFT_FILE=$(uv run python scripts/draft.py --skill translate path <TARGET_FILE>)
-   ```
-   Draft/source mapping is stored in `.state/translate/draft-manifest.json`; do not add translation metadata to frontmatter. Do NOT overwrite source file; write only to `$DRAFT_FILE`.
-
-   If Codex tiering is enabled and available (`./codex-tier.md` §2), delegate generating `$DRAFT_FILE` to Codex per `./codex-tier.md` §3, inlining the constraints below into the prompt. On any Codex failure, fall back to translating it yourself per `./codex-tier.md` §5.
-
-   Otherwise (or on fallback), translate to `$DRAFT_FILE` yourself:
-   - Traditional Chinese only (Taiwan usage), no Simplified Chinese
-   - Follow `./translator-style.md` for register, proper-noun policy, POV, terminology glossing, and sentence structure
-   - Preserve markdown structure exactly (frontmatter, headings, lists, tables, links, code blocks)
-   - Follow every applicable note in `style-decisions.json.translation_notes`
-   - Treat `frontmatter.title` as the page title; do not restate it anywhere in the body as a heading of any level (`#`, `##`, etc.)
-   - If the source page opens with an overview/introduction block that has no heading, translate it as plain body content; do not invent a `#` or `## 概覽` heading
-   - Preserve image links exactly; if an image link appears within the source flow for a paragraph, keep the same link but place it near the middle of the translated paragraph instead of splitting the paragraph into separate blocks
-   - Use glossary mappings exactly
-   - Manual translation only (no script-generated prose)
-5. Self-review the draft against source — this step is unconditional and identical whether Codex or you generated `$DRAFT_FILE`:
-   - Missing or truncated content?
-   - Glossary violations?
-   - Violated any item in `style-decisions.json.translation_notes`?
-   - Markdown structure broken?
-   - Added any heading of any level that simply restates `frontmatter.title`?
-   - Added `概覽`/overview heading that does not exist in the source?
-   - Image links preserved and kept inside the paragraph flow without splitting the paragraph?
-   - Full-width punctuation correct?
-   - Content contamination: any paragraph or block that has no corresponding source in the original file?
-   - Untranslated English: any English left untranslated (excluding code/dice notation such as `1d6`, `+2`)? Covers body text, headings, table cells, and game labels (status conditions, item tags, rule keywords/phrases). Terminology must match `glossary.json`; proper nouns follow `style-decisions.json` policy.
-   - Native Chinese quality: any sentence that keeps English clause order/structure instead of natural Chinese syntax? Any 四字成語 or literary flourish that isn't grounded in the source's meaning? Any technical term translated where `glossary.json` or `style-decisions.json` says to keep the original English form?
-   - `./translator-style.md` compliance: register correct outside play examples, POV preserved, first-occurrence glossing present, long sentences split
-   - Fix any issues found in the draft directly
-6. Writeback:
-   ```bash
-   uv run python scripts/draft.py --skill translate writeback <TARGET_FILE>
-   ```
-7. **Immediately** update progress:
-   ```bash
-   uv run python scripts/progress_edit.py --file <TARGET_FILE> --status completed
-   ```
-   Do NOT defer this update; run it before moving to the next file.
-8. If using task tracking, mark the item completed
-
-**Unknown term handling:**
+### 4. Validate structure deterministically
 
 ```bash
-uv run python scripts/term_edit.py --term "<TERM>" --set-zh "<ZH>" --status approved --mark-term
-uv run python scripts/term_read.py --fail-on-forbidden
+uv run python scripts/validate_translation_structure.py \
+  <ABSOLUTE_SOURCE_PATH> \
+  <ABSOLUTE_DRAFT_PATH> \
+  --json
 ```
 
-Then continue translating with the updated glossary.
+Repair only reported structural differences, then rerun until the command exits zero. This gate owns frontmatter, heading sequence, list nesting, table shape, fences/admonitions, images, MDX/import blocks, and block order. It does not judge translated meaning.
 
-**Verification:** Self-review checklist passes; writeback exits 0; progress JSON updated.
+**Complete when:** deterministic structure validation exits zero.
 
-### Step 6: Batch Checkpoint Commit
+### 5. Review semantics once
 
-After all files in the current batch are processed:
+Dispatch one semantic reviewer using [`semantic-reviewer-prompt.md`](./semantic-reviewer-prompt.md). It checks completeness, mechanics fidelity, unsupported additions, glossary use, and natural zh-TW. It does not repeat the deterministic Markdown audit.
 
-1. Run `git status --short` and verify batch scope before staging.
-2. Stage **only** files touched by this batch:
-   - completed translated source files from this batch
-   - `data/translation-progress.json`
-   - `glossary.json` if changed in this batch
-   - `style-decisions.json` if changed in this batch
-3. Create one checkpoint commit for the batch:
+- pass: continue to writeback;
+- fail: use [`targeted-refiner-prompt.md`](./targeted-refiner-prompt.md) to edit only reported blocks, then rerun deterministic validation;
+- dispatch a second semantic review only when a reported semantic issue still requires judgment after repair;
+- if a genuine source/term ambiguity remains, pause the affected chapter and ask the user; independent chapters may continue.
+
+**Complete when:** semantic review passes or every finding is resolved with direct source evidence.
+
+### 6. Write back and continue
+
+Write back first and branch on its exit code:
 
 ```bash
-git commit -m "progress: X/Y"
+uv run python scripts/draft.py --skill translate writeback <TARGET_FILE>
 ```
 
-4. Commit message rules:
-   - keep it short and progress-only
-   - use the current completion count from `uv run python scripts/progress_read.py --json`
-   - do not mention filenames, rationale, or extra prose
-5. Never stage or commit unrelated user changes.
-6. If no file reached `completed` in this batch, skip the commit.
+Only a zero exit code permits completion:
 
-**Verification:** `git log -1` shows progress commit.
+```bash
+uv run python scripts/progress_edit.py --file <TARGET_FILE> --status completed
+```
 
-### Step 7: Final Verification
+If the translated frontmatter changes a navigation title or description, update the matching `chapters.json` entry. At each checkpoint:
+
+1. regenerate navigation only when its metadata changed;
+2. stage only translated chapters, progress, context, glossary/style decisions, and changed navigation metadata;
+3. commit `progress: X/Y`;
+4. continue with the next pending checkpoint batch without asking the user.
+
+```bash
+uv run python scripts/generate_nav.py  # only when navigation metadata changed
+```
+
+A failed writeback leaves the file `in_progress` and stops completion bookkeeping for that file.
+
+**Complete when:** source contains the reviewed draft, progress reflects the writeback, and automatic continuation has selected the next file or exhausted scope.
+
+### 7. Verify the completed scope
+
+After the selected scope completes:
 
 ```bash
 uv run python scripts/validate_glossary.py
 uv run python scripts/term_read.py --fail-on-missing --fail-on-forbidden
 ```
 
-If using task tracking, mark the final verification item completed.
+Invoke `check-consistency`. When all chapters are completed, invoke `check-completeness` once. Resolve deterministic violations directly; ask the user only when a correction requires a real translation decision.
 
-**Verification:** Both validation commands exit 0; `data/translation-progress.json` shows all target files `completed`.
+`final-proofread` is a separate publication-readiness workflow. Report it as the next release step instead of invoking it automatically.
 
-## Flowchart
+**Complete when:** selected chapters are completed, terminology checks pass, and whole-book completeness has passed when applicable.
 
-```dot
-digraph translate {
-    rankdir=TB;
-    scope [label="Resolve scope\n& preconditions", shape=box];
-    preflight [label="Terminology\npreflight", shape=box];
-    mode [label="Resolve\ntranslation mode", shape=box];
-    translate [label="Translate file\n(Codex or self,\nsame self-review loop)", shape=box];
-    writeback [label="Writeback +\nupdate progress", shape=box];
-    checkpoint [label="Batch checkpoint\n& commit", shape=box];
-    more [label="More files?", shape=diamond];
-    verify [label="Final\nverification", shape=box];
+## Automatic continuation and stop conditions
 
-    scope -> preflight -> mode -> translate;
-    translate -> writeback;
-    writeback -> checkpoint;
-    checkpoint -> more;
-    more -> translate [label="yes"];
-    more -> verify [label="no"];
-}
-```
+Continue without interaction through scope selection, checkpoint batches, passing chapters, deterministic repairs, progress updates, and navigation regeneration.
 
-## Progress Sync Contract (Required)
+Stop or ask only for:
 
-1. Sync `data/translation-progress.json` (via `progress_edit.py`), and the task list if one is in use, at file start and file close.
-2. Never defer sync until end-of-run.
-3. Create the batch checkpoint commit immediately after batch completion; do not postpone it to a later batch.
+- a term or passage with multiple defensible readings that changes meaning or tone;
+- a rare character, proper name, pun, or cultural adaptation without reliable evidence;
+- an unrecoverable structure/writeback/tool failure;
+- a semantic issue still unresolved after one targeted repair;
+- an explicit user interruption.
 
-## Red Flags
+## Compatibility
 
-| Thought | Reality |
-|---------|---------|
-| "Just overwrite source, I'll review later" | Draft isolation exists for a reason. NEVER overwrite without self-review. |
-| "Skip task updates until the end" | Sync contract is per-file, not per-run. |
-| "I'll invent a translation for this unknown term" | Run `term_edit.py --set-zh` workflow. No exceptions. |
-| "Skip terminology preflight, it was fine last time" | Glossary changes between runs. Always preflight. |
-| "One file left, no need for checkpoint commit" | Every completed batch gets a commit. No exceptions. |
-| "I can batch-replace with regex for speed" | Manual translation only. Script-generated prose is forbidden. |
-| "I'll add a heading to restate the title" | Never restate `frontmatter.title` as a body heading. |
-| "I'll add an overview heading for clarity" | Never invent a heading that does not exist in the source. |
-| "Codex wrote this draft, skip the self-review" | Review is unconditional regardless of who/what generated the draft. |
+- `/super-translate` forwards to this process during its deprecation period.
+- Existing progress, glossary, style, chapter, draft-manifest, and checkpoint formats remain authoritative.
+- Bilingual translation retains its separate skill.
 
-## When to Stop and Ask for Help
+## References
 
-Stop when:
-- mode policy is unclear
-- source text ambiguity changes mechanics meaning
-- repeated terminology conflicts block translation integrity
-
-## When to Revisit Earlier Steps
-
-Return to Step 1 or 3 when:
-- target scope changes
-- translation mode changes
-- glossary decisions change materially
-
-## Next Step
-
-After translation, run `/check-consistency` and `/check-completeness` as needed.
-
-If `uv run python scripts/progress_read.py` shows all files are `completed` after this batch, invoke the `final-proofread` skill to run the three-gate quality sweep before publishing.
-
-## Example Usage
-
-```text
-/translate
-/translate docs/src/content/docs/rules/basic.md
-/translate rules
-/translate all
-```
+- [`context-prompt.md`](./context-prompt.md)
+- [`translator-prompt.md`](./translator-prompt.md)
+- [`semantic-reviewer-prompt.md`](./semantic-reviewer-prompt.md)
+- [`targeted-refiner-prompt.md`](./targeted-refiner-prompt.md)
+- [`translator-style.md`](./translator-style.md)
+- [`codex-tier.md`](./codex-tier.md)

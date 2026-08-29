@@ -11,4 +11,4 @@
 | `bun run build` | 建置到 `./dist/` |
 | `bun run preview` | 預覽建置結果 |
 
-手動編輯 `src/content/docs/` 的內容會在下次執行管線時被覆寫；請透過翻譯工作流程（`/translate`、`/super-translate`）修改。
+手動編輯 `src/content/docs/` 的內容會在下次執行管線時被覆寫；請透過 `/translate` 工作流程修改。

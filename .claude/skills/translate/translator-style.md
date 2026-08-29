@@ -1,6 +1,6 @@
 # Translator Voice & Style
 
-Shared by `translate`, `super-translate`, and `bilingual-translate`. Reused by relative path from `../super-translate/` and `../bilingual-translate/`.
+Shared by `translate` and `bilingual-translate`. The deprecated `super-translate` entry inherits these rules by forwarding to `translate`.
 
 **Purpose:** the project owner's personal translation voice, distilled directly from the owner in interview. Applies as the default register/terminology voice across every project cloned from this template — on top of it, `style-decisions.json.translation_notes` may add project-specific notes, but must not contradict these rules without an explicit owner decision recorded there.
 
@@ -17,7 +17,7 @@ Shared by `translate`, `super-translate`, and `bilingual-translate`. Reused by r
 
 ## Where this applies
 
-- `translate` Step 5 point 4 (self-translation path) and point 5 (self-review checklist)
-- `super-translate` `translator-prompt.md` Hard Constraints, and `reviewer-prompt.md` Review Scope item 6 (Native Chinese quality)
+- `translate` Step 3 translator prompt and Step 5 semantic review
+- `super-translate` through its compatibility forward to `translate`
 - `bilingual-translate` Step 4 point 3 (placeholder filling) and point 5 (self-review checklist) — applies to the Chinese half of each block only; the English blockquote line stays byte-for-byte untouched regardless
 - Codex-routed drafts (`codex-tier.md` §3): inline these rules into the Codex prompt exactly like any other hard constraint — draft origin does not change which voice applies

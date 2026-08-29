@@ -2,7 +2,7 @@
 
 基於 Astro + Starlight 的遊戲規則文件模板，專為 TRPG 設計，也適用於任何遊戲規則文件。
 
-本模板內建作者本人的翻譯風格（見 `.claude/skills/translate/translator-style.md`），`translate`/`super-translate`/`bilingual-translate` 預設都會套用這份風格；由此模板複製出的新專案會自動繼承，不需每個專案重新設定。
+本模板內建作者本人的翻譯風格（見 `.claude/skills/translate/translator-style.md`），`translate`／`bilingual-translate` 預設都會套用這份風格；由此模板複製出的新專案會自動繼承，不需每個專案重新設定。
 
 ## 快速開始
 
@@ -111,18 +111,18 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 
 ### 使用原則
 
-- 建議流程：`new-project` → `init-doc` → `translate`（或高品質版 `super-translate`）；若來源更新或要重切章，插入 `chapter-split`。完整步驟見下方[本專案工作流程](#本專案工作流程簡版)。
-- `translate`：單輪線性翻譯，適合快速草稿；`super-translate` (beta)：多 agent 審查循環（Translator → Reviewer → MD Reviewer → Refiner，最多 2 輪），適合正式發布
-- `translate`、`super-translate`、`bilingual-translate` 都會在每個 batch 完成後自動建立一個簡短進度 commit（格式：`progress: X/Y`）
+- 建議流程：`new-project` → `init-doc` → `translate`；若來源更新或要重切章，插入 `chapter-split`。完整步驟見下方[本專案工作流程](#本專案工作流程簡版)。
+- `translate` 先讀全文並保存全書／各章摘要，再逐章完整翻譯。每章以程式檢查 Markdown 結構，並進行一次語義審查；只有失敗時才定向修訂與必要複審。
+- `translate`、`bilingual-translate` 都會在每個 batch 完成後自動建立一個簡短進度 commit（格式：`progress: X/Y`）。舊的 `super-translate` 指令暫時保留，但會轉交新的 `translate` 流程。
 - 翻譯前先確認術語（`glossary.json`），交付前執行一致性與完整性檢查
 
 ### 翻譯草稿模型分層（Codex，選用）
 
-`translate`、`super-translate`、`bilingual-translate` 可將草稿生成這一步（最耗 token 的步驟）交給本機 Codex CLI 執行（低階模型、低 effort），Claude 只負責審查與把關，藉此把 Claude token 留給真正需要判斷力的步驟。
+`translate`、`bilingual-translate` 可將草稿生成這一步（最耗 token 的步驟）交給本機 Codex CLI 執行（低階模型、低 effort），Claude 只負責審查與把關，藉此把 Claude token 留給真正需要判斷力的步驟。
 
 - 每個專案第一次執行任一翻譯 skill 時會詢問一次是否啟用，答案存在 `style-decisions.json`，之後不再詢問；不想用 Codex 的人選「否」即可，不影響其他功能。
 - 啟用後才會偵測 Codex 是否可用；沒裝且本機有 npm 時才會問要不要安裝，拒絕的話也只問一次。
-- Codex 產生的草稿一律要通過既有的自我審查／reviewer 關卡才能寫回，跟 Claude 自己寫的草稿待遇完全相同；Codex 失敗會靜默退回 Claude 自己寫，不會中斷整批次。
+- Codex 產生的草稿與本機產生的草稿使用相同守門條件：程式化 Markdown 結構檢查與一次語義審查。Codex 失敗會靜默退回目前的執行環境自行產生草稿，不會中斷整批次。
 - 完整運作方式見 `.claude/skills/translate/codex-tier.md`。
 
 ### 常用指令對照
@@ -132,8 +132,8 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 | 建立新專案                       | `new-project <pdf-path>`     |
 | 初始化翻譯專案                   | `init-doc`                   |
 | 重新切章與重建導覽               | `chapter-split [source]`     |
-| 翻譯章節或檔案                   | `translate [target]`         |
-| 翻譯＋多輪審查（beta）           | `super-translate [target]`   |
+| 翻譯章節或整本規則書             | `translate [target]`         |
+| 舊版翻譯相容入口（逐步淘汰）     | `super-translate [target]`   |
 | Markdown 結構與風格檢查          | `md-review [target]`         |
 | 單輪雙語翻譯（中文正文＋英文引用） | `bilingual-translate [target]` |
 | 術語一致性檢查                   | `check-consistency`          |
@@ -172,8 +172,8 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 
 5. 執行翻譯（套用術語表）
    翻譯時以 `glossary.json` 優先，並保留 Markdown 結構。原理：翻譯不是逐句自由發揮，而是「內容翻譯 + 術語套版」。
-   - `translate`：單輪翻譯，適合快速草稿或已有良好術語表的情況；每個 batch 完成後會自動建立 `progress: X/Y` 進度 commit。
-   - `super-translate` (beta)：多 agent 翻譯審查循環，Translator → Reviewer → MD Reviewer → Refiner 最多迭代 2 輪，自動修正術語不一致、殘留英文、簡體字、Markdown 結構問題，適合正式發布前的高品質輸出；每個 batch 完成後會自動建立 `progress: X/Y` 進度 commit。
+   - `translate`：首次執行會建立可重用的全文與各章摘要，之後逐章翻譯。每章先做程式化結構檢查，再進行一次語義審查；寫回後立即更新進度並自動繼續。
+   - `super-translate`：舊版相容入口，會把相同範圍轉交 `translate`，不再執行獨立的多 agent 審查循環。
 
 6. 修正頁碼參照  
    翻譯完成後執行 `fix-ref`，把「見 12 頁」之類的列印頁碼參照轉換成內部 Markdown 連結。

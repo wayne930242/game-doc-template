@@ -43,8 +43,10 @@ def test_remove_progress_files(monkeypatch, tmp_path):
     (tmp_path / "data").mkdir()
     for name in ("translation-progress.json", "translation-progress-bilingual.json"):
         (tmp_path / "data" / name).write_text("{}", encoding="utf-8")
+    (tmp_path / "data" / "translation-context.json").write_text("{}", encoding="utf-8")
     csd.remove_progress_files(apply=True)
     assert not list((tmp_path / "data").glob("translation-progress*.json"))
+    assert not (tmp_path / "data" / "translation-context.json").exists()
 
 
 def test_reset_astro_config_title_and_sidebar(monkeypatch, tmp_path):

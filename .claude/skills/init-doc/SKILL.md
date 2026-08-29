@@ -8,14 +8,14 @@ user-invocable: true
 
 ## Overview
 
-Initialize translation baseline from PDF extraction to chaptered docs, style decisions, glossary, and progress tracker.
+Initialize translation baseline from PDF extraction to chaptered docs, style decisions, glossary, progress tracker, and reusable whole-book context.
 
 **Core principle:** Build a deterministic, verifiable baseline before any large-scale translation.
 
 ## Task Initialization (MANDATORY)
 
 Before ANY action, create tasks using TaskCreate:
-- One task per major phase (extraction, formatting, images/theme, terminology, chapter split, progress tracker)
+- One task per major phase (extraction, formatting, images/theme, terminology, chapter split, progress tracker, translation context)
 - One task for final handoff gate
 
 ## Interaction Rules
@@ -56,6 +56,7 @@ Create TaskCreate items for:
 - terminology bootstrap
 - chapter mapping
 - progress tracker creation
+- reusable translation context
 - final handoff gate
 
 **Verification:** All tasks created with correct descriptions; task list matches the phases above.
@@ -284,7 +285,26 @@ Tracker contract:
 
 **Verification:** `data/translation-progress.json` exists; contains all chapters from `chapters.json` with status `not_started`; `_meta` fields present.
 
-### Step 10: Final Gate and Handoff (Fail-Closed)
+### Step 10: Persist Reusable Translation Context
+
+Initialize the context file after chapter order and progress state are stable:
+
+```bash
+uv run python scripts/translation_context.py init
+```
+
+Use [`../translate/context-prompt.md`](../translate/context-prompt.md) to write the full-book summary and one summary, role, dependency list, and applicable term list for every chapter. Reuse the complete-source understanding already gathered during extraction, formatting, terminology, and chapter mapping; read only source sections that were not actually covered in the current run. Do not begin chapter translation here.
+
+Record only genuine unresolved ambiguities. Resolve them through the terminology decision flow, update `glossary.json`, clear the resolved queue, and finalize:
+
+```bash
+uv run python scripts/translation_context.py finalize
+uv run python scripts/translation_context.py status --require-ready
+```
+
+**Verification:** `data/translation-context.json` exists, covers every progress entry, contains no unresolved ambiguities, and reports `ready`.
+
+### Step 11: Final Gate and Handoff (Fail-Closed)
 
 Run one-shot handoff gate:
 
@@ -315,6 +335,7 @@ digraph init_doc {
     split [label="Chapter split\n(chapter-split)", shape=box];
     split_ok [label="Split\nsucceeded?", shape=diamond];
     progress [label="Create progress\ntracker", shape=box];
+    context [label="Persist reusable\ntranslation context", shape=box];
     gate [label="Final handoff\ngate", shape=box];
     gate_ok [label="Gate\npasses?", shape=diamond];
     done [label="Done →\ntranslate", shape=box];
@@ -334,7 +355,7 @@ digraph init_doc {
     split -> split_ok;
     split_ok -> progress [label="yes"];
     split_ok -> fix [label="no"];
-    progress -> gate;
+    progress -> context -> gate;
     gate -> gate_ok;
     gate_ok -> done [label="yes"];
     gate_ok -> fix [label="no"];

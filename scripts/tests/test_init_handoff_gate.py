@@ -60,8 +60,12 @@ def test_main_passes_with_skip_docs_build(monkeypatch, tmp_path):
 
     gate.main()
 
-    # validate_glossary + validate_style_decisions + term_read, no bun build
-    assert len(calls) == 3
+    # validate_glossary + validate_style_decisions + term_read + translation context, no bun build
+    assert len(calls) == 4
+    assert any(
+        cmd[1:] == ["scripts/translation_context.py", "status", "--require-ready"]
+        for cmd in calls
+    )
     assert not any(cmd[0] == "bun" for cmd in calls)
 
 

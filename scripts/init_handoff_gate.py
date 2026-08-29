@@ -19,6 +19,7 @@ REQUIRED_FILES = [
     "style-decisions.json",
     "chapters.json",
     "data/translation-progress.json",
+    "data/translation-context.json",
 ]
 
 
@@ -82,6 +83,7 @@ def main() -> None:
         [py, "scripts/validate_glossary.py"],
         [py, "scripts/validate_style_decisions.py"],
         [py, "scripts/term_read.py", "--fail-on-missing", "--fail-on-forbidden"],
+        [py, "scripts/translation_context.py", "status", "--require-ready"],
     ]
 
     bun_missing = not args.skip_docs_build and not check_bun_available()

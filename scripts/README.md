@@ -88,7 +88,9 @@ tesseract --list-langs
 | `init_handoff_gate.py` | 一次執行 init-doc 交接前的所有守門檢查（含 `bun run build`） |
 | `progress_edit.py` | 更新翻譯進度項目 |
 | `progress_read.py` | 讀取並顯示翻譯進度 |
-| `draft.py` | 管理 `translate`／`super-translate` 的草稿檔（`path`／`chunk-path`／`writeback`／`clean`） |
+| `translation_context.py` | 建立、驗證並判斷全文翻譯脈絡是否需要更新 |
+| `validate_translation_structure.py` | 比對來源與譯稿的 Markdown／MDX 區塊結構 |
+| `draft.py` | 管理翻譯草稿檔（`path`／`chunk-path`／`writeback`／`clean`） |
 | `bilingual_prep.py` | 將來源英文 Markdown 轉換為含佔位符的雙語翻譯草稿 |
 
 ### 內部共用庫（`_*.py`，不直接執行）
@@ -245,7 +247,7 @@ uv run python scripts/style_decisions.py add-translation-note \
 uv run python scripts/validate_style_decisions.py
 ```
 
-`translation_notes` 會集中存放翻譯備註，讓 `translate` / `super-translate` 一次讀完整份 `style-decisions.json` 就能拿到所有全域約束；若是特定文件備註，可用 `--document-key <pdf_stem_or_doc_id>`。
+`translation_notes` 會集中存放翻譯備註，讓 `translate` 一次讀完整份 `style-decisions.json` 就能拿到所有全域約束；`super-translate` 相容入口會轉交相同流程。若是特定文件備註，可用 `--document-key <pdf_stem_or_doc_id>`。
 
 ### 2. 設定章節結構
 

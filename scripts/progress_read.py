@@ -78,7 +78,7 @@ def main() -> None:
     elif args.next:
         not_started = [ch for ch in chapters if ch.get("status") == "not_started"]
         in_progress = [ch for ch in chapters if ch.get("status") == "in_progress"]
-        filtered = (not_started + in_progress)[: args.next]
+        filtered = (in_progress + not_started)[: args.next]
     else:
         filtered = chapters
 

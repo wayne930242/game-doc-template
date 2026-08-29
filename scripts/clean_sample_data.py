@@ -184,6 +184,9 @@ def remove_progress_files(apply: bool) -> None:
         return
     for path in sorted(PROGRESS_GLOB_DIR.glob("translation-progress*.json")):
         remove_path(path, apply)
+    context_path = PROGRESS_GLOB_DIR / "translation-context.json"
+    if context_path.exists():
+        remove_path(context_path, apply)
 
 
 def reset_astro_config(apply: bool) -> None:
