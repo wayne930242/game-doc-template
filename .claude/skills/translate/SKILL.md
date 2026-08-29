@@ -184,13 +184,21 @@ uv run python scripts/term_read.py --fail-on-missing --fail-on-forbidden
 
 Invoke `check-consistency`. When all chapters are completed, invoke `check-completeness` once. Resolve deterministic violations directly; ask the user only when a correction requires a real translation decision.
 
+After `check-completeness` passes and every progress entry is `completed`, run the final website handoff:
+
+```bash
+uv run python scripts/translation_completion.py --json
+```
+
+This command regenerates the final homepage and sidebar navigation, rechecks glossary/style/terminology/context state, builds `docs/dist/`, and verifies the generated search index. Require a zero exit code before reporting the whole book or website complete. Partial scopes do not run this handoff and must report only their scoped translation result.
+
 `final-proofread` is a separate publication-readiness workflow. Report it as the next release step instead of invoking it automatically.
 
-**Complete when:** selected chapters are completed, terminology checks pass, and whole-book completeness has passed when applicable.
+**Complete when:** selected chapters are completed and terminology checks pass; for a whole-book completion, completeness, final navigation, production build, and search verification also pass and `docs/dist/` exists.
 
 ## Automatic continuation and stop conditions
 
-Continue without interaction through scope selection, checkpoint batches, passing chapters, deterministic repairs, progress updates, and navigation regeneration.
+Continue without interaction through scope selection, checkpoint batches, passing chapters, deterministic repairs, progress updates, navigation regeneration, and the final website handoff when all chapters complete.
 
 Stop or ask only for:
 

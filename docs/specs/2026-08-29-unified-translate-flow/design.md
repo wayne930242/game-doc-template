@@ -6,6 +6,7 @@ The existing `/translate` workflow remains the orchestration surface. Two small 
 
 1. `scripts/translation_context.py` owns creation, validation, fingerprinting, and staleness reporting for `data/translation-context.json`.
 2. `scripts/validate_translation_structure.py` owns source/draft Markdown block-shape comparison.
+3. `scripts/translation_completion.py` owns the final all-chapters-complete guard and deterministic navigation/build/search command sequence.
 
 The skill remains responsible for semantic work: reading the complete source, writing the summaries, resolving terminology through the existing glossary workflow, translating prose, dispatching one semantic review, applying targeted repairs, and sequencing writeback/progress/navigation.
 
@@ -40,12 +41,24 @@ The module intentionally ignores translated prose and semantic correctness. Thos
 
 `/super-translate` becomes a compatibility adapter that forwards its scope to `/translate`; it owns no translation pipeline.
 
+### Completion-handoff module
+
+Public CLI:
+
+- accept a project root and optional Bun executable override;
+- refuse to run while any progress entry is not `completed`;
+- run navigation regeneration, project validation, site build, and search verification in a fixed fail-closed order;
+- emit a machine-readable report of every attempted check and the final `docs/dist/` path.
+
+The module accepts subprocess execution and Bun resolution behind one interface so the skill does not duplicate command ordering or error handling. Semantic consistency and completeness remain skill-owned prerequisites because they require source-aware judgment; the CLI owns only deterministic completion evidence.
+
 ## Existing precedents
 
 - `scripts/init_create_progress.py` and `progress_read.py` establish ordered project state and JSON CLIs.
 - `scripts/draft.py` establishes isolated draft paths and fail-closed writeback.
 - `scripts/validate_glossary.py` establishes deterministic validation before semantic work.
 - `scripts/generate_nav.py` remains the navigation generator rather than adding navigation logic to translation context.
+- `scripts/init_handoff_gate.py` establishes the fail-closed command-report pattern and Bun build precedent reused by the completion handoff.
 
 ## Alternatives considered
 
@@ -80,6 +93,7 @@ Rejected. Per-chapter semantic review catches rule drift before it becomes commi
 - Navigation regeneration occurs at checkpoints only when translated navigation metadata changed.
 - A second semantic review is conditional, not automatic.
 - `final-proofread` remains separate from translation completion.
+- Final navigation/build/search verification runs only after the progress map reaches all-completed; partial translation remains cheap and does not produce a false deployable claim.
 
 ## Risks
 
@@ -87,6 +101,7 @@ Rejected. Per-chapter semantic review catches rule drift before it becomes commi
 - A stale context could cause cross-chapter drift. Fingerprints distinguish source/chapter changes from glossary/style changes so refresh work is proportional.
 - A compatibility wrapper could preserve obsolete behavior accidentally. Forward testing must confirm that `super-translate` contains no reviewer/refiner loop of its own.
 - A failed writeback followed by an independent progress update could create false completion. The skill must branch on the writeback exit code, and integration evidence must prove writeback precedes completion.
+- A stale navigation or failed site build could leave translated Markdown committed without a deployable website. The completion CLI reruns navigation and fails closed on build/search errors.
 
 ## Correctness method
 

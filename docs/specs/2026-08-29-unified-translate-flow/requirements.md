@@ -14,6 +14,7 @@ The project owner wants one primary `/translate` workflow that combines the whol
 - Keep one semantic review per chapter; use targeted repair and a second semantic review only when the first review finds unresolved semantic problems.
 - Write each passing chapter back immediately, update progress, maintain translated headings/navigation data, and continue automatically.
 - Run terminology consistency and content completeness checks after translation finishes.
+- After the whole book passes those checks, regenerate final navigation, build the documentation site, verify its search index, and leave a deployable `docs/dist/` artifact.
 - Deprecate `super-translate` gradually through a compatibility wrapper instead of removing the command immediately.
 
 ## Out of scope
@@ -35,6 +36,7 @@ The project owner wants one primary `/translate` workflow that combines the whol
 7. **Failing chapter:** repair only the reported blocks, rerun deterministic checks, and request a second semantic review only when semantic findings remain relevant.
 8. **Completed translation:** run glossary consistency and content completeness once. Report `final-proofread` as the separate next step for publication.
 9. **Legacy invocation:** `/super-translate` reports its deprecation once and delegates to the unified `/translate` behavior without running the old reviewer/refiner pipeline.
+10. **Completed website:** only when every progress entry is `completed`, regenerate navigation, run deterministic project guards, build the site, verify search, and fail closed if any command fails.
 
 ## Confirmed decisions
 
@@ -45,6 +47,7 @@ The project owner wants one primary `/translate` workflow that combines the whol
 - Targeted repair replaces whole-chapter refiner passes.
 - The workflow asks the user only when ambiguity or an unrecoverable failure affects correctness.
 - Translation completion automatically runs consistency and completeness checks, but not `final-proofread`.
+- A whole-book run is not complete until the final navigation and website build pass. Focused or partial translation does not trigger this handoff.
 
 ## Open questions
 

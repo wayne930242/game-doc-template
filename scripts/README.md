@@ -89,6 +89,7 @@ tesseract --list-langs
 | `progress_edit.py` | 更新翻譯進度項目 |
 | `progress_read.py` | 讀取並顯示翻譯進度 |
 | `translation_context.py` | 建立、驗證並判斷全文翻譯脈絡是否需要更新 |
+| `translation_completion.py` | 全書完成後重建導覽、執行 deterministic 守門檢查、建置網站並驗證搜尋索引 |
 | `validate_translation_structure.py` | 比對來源與譯稿的 Markdown／MDX 區塊結構 |
 | `draft.py` | 管理翻譯草稿檔（`path`／`chunk-path`／`writeback`／`clean`） |
 | `bilingual_prep.py` | 將來源英文 Markdown 轉換為含佔位符的雙語翻譯草稿 |

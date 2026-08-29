@@ -25,6 +25,10 @@ def test_translate_documents_unattended_order_and_bounded_review() -> None:
     assert "without a confirmation pause" in text
     assert "dispatch a second semantic review only when" in text
     assert "final-proofread` is a separate" in text
+    assert text.index("invoke `check-completeness`") < text.index(
+        "scripts/translation_completion.py --json"
+    )
+    assert "Partial scopes do not run this handoff" in text
     validator_block = text[text.index("validate_translation_structure.py") :]
     assert validator_block.index("<ABSOLUTE_SOURCE_PATH>") < validator_block.index(
         "<ABSOLUTE_DRAFT_PATH>"

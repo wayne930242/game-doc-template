@@ -67,6 +67,15 @@
 
 - After the selected translation scope completes, the workflow SHALL run glossary validation and terminology consistency.
 - When the whole book completes, the workflow SHALL invoke content completeness checking once.
+- When and only when every translation-progress chapter is `completed`, the workflow SHALL run one fail-closed completion handoff that:
+  1. regenerates navigation from the root `chapters.json`;
+  2. rechecks glossary, style decisions, forbidden/missing terminology, and reusable context readiness;
+  3. runs the documentation production build;
+  4. verifies the generated search index;
+  5. requires `docs/dist/index.html` and `docs/dist/pagefind/pagefind.js` to exist;
+  6. reports the deployable `docs/dist/` path.
+- A partial scope SHALL stop after its scoped checks and SHALL NOT claim that the final website is complete.
+- Any navigation, validation, build, or search-verification failure SHALL return non-zero and prevent the workflow from reporting whole-book completion.
 - `final-proofread` SHALL be reported as a separate publication step and SHALL NOT run automatically from `/translate`.
 
 ### 8. `super-translate` deprecation
@@ -103,6 +112,7 @@
 
 - Unit tests for context creation, fingerprint reuse/invalidation, ordered chapter mapping, and unresolved-term persistence.
 - Unit tests for deterministic Markdown structure comparison, including a passing equivalent document and failures for dropped/reordered headings, lists, tables, fences, images, frontmatter, and MDX blocks.
+- CLI tests for the whole-book completion handoff, including incomplete-progress refusal, ordered fail-closed checks, successful build/search verification, and failure propagation.
 - Regression test that resume order is `in_progress` before `not_started`.
 - Integration test over a three-chapter fixture proving context preparation, `0/3 → 1/3 → 3/3` persistence, writeback-before-completed ordering, and interruption/resume.
 - Navigation tests proving translated metadata is reflected at checkpoints without hiding untranslated chapters.

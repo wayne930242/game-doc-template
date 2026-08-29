@@ -70,7 +70,7 @@ Convert PDF game rulebooks into a Traditional Chinese Markdown documentation sit
 | `/new-project`        | Create a new project from template and set up a private GitHub repo   |
 | `/init-doc`           | Initial setup: extract content, pick images/theme, and build glossary |
 | `/chapter-split`      | Split extracted Markdown into semantic docs pages and regenerate nav  |
-| `/translate`          | Translate one chapter or a whole book with reusable context and bounded review |
+| `/translate`          | Translate with reusable context; whole-book completion builds the final site |
 | `/super-translate`    | Deprecated compatibility entry; forwards to `/translate`             |
 | `/md-review`          | Check Markdown structure and style compliance for docs or drafts      |
 | `/bilingual-translate` | Single-pass bilingual translate: Chinese primary + English blockquote (no review loop) |

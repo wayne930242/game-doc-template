@@ -112,7 +112,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 ### 使用原則
 
 - 建議流程：`new-project` → `init-doc` → `translate`；若來源更新或要重切章，插入 `chapter-split`。完整步驟見下方[本專案工作流程](#本專案工作流程簡版)。
-- `translate` 先讀全文並保存全書／各章摘要，再逐章完整翻譯。每章以程式檢查 Markdown 結構，並進行一次語義審查；只有失敗時才定向修訂與必要複審。
+- `translate` 先讀全文並保存全書／各章摘要，再逐章完整翻譯。每章以程式檢查 Markdown 結構，並進行一次語義審查；只有失敗時才定向修訂與必要複審。全書完成後會重建最終導覽、建置網站並驗證搜尋索引。
 - `translate`、`bilingual-translate` 都會在每個 batch 完成後自動建立一個簡短進度 commit（格式：`progress: X/Y`）。舊的 `super-translate` 指令暫時保留，但會轉交新的 `translate` 流程。
 - 翻譯前先確認術語（`glossary.json`），交付前執行一致性與完整性檢查
 
@@ -172,7 +172,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 
 5. 執行翻譯（套用術語表）
    翻譯時以 `glossary.json` 優先，並保留 Markdown 結構。原理：翻譯不是逐句自由發揮，而是「內容翻譯 + 術語套版」。
-   - `translate`：首次執行會建立可重用的全文與各章摘要，之後逐章翻譯。每章先做程式化結構檢查，再進行一次語義審查；寫回後立即更新進度並自動繼續。
+   - `translate`：首次執行會建立可重用的全文與各章摘要，之後逐章翻譯。每章先做程式化結構檢查，再進行一次語義審查；寫回後立即更新進度並自動繼續。所有章節完成且通過一致性與完整性檢查後，自動重建導覽並產生已驗證搜尋功能的 `docs/dist/` 網站。
    - `super-translate`：舊版相容入口，會把相同範圍轉交 `translate`，不再執行獨立的多 agent 審查循環。
 
 6. 修正頁碼參照  
@@ -192,7 +192,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
    在 `docs/` 下執行 `bun dev`，檢查頁面、目錄、連結、圖片與主題樣式。
 
 10. 建置與部署  
-    `bun run build` 確認無誤後部署——Public 專案優先用 GitHub Pages，需要密碼保護或私有部署則用 Vercel。詳見〈部署〉章節。
+    完整執行 `translate all` 時會自動重建導覽、執行 `bun run build` 並驗證搜尋索引。確認 `docs/dist/` 後部署——Public 專案優先用 GitHub Pages，需要密碼保護或私有部署則用 Vercel。詳見〈部署〉章節。
 
 ---
 
