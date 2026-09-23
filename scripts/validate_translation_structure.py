@@ -444,6 +444,27 @@ def _finding(
     }
 
 
+def align_equal_tokens(
+    source_tokens: Sequence[StructureToken], draft_tokens: Sequence[StructureToken]
+) -> list[tuple[StructureToken, StructureToken]]:
+    """Return source/draft token pairs the structure matcher treats as equal (same shape, same order).
+
+    Reused by tooling that needs to locate a specific source structural position inside an
+    already-translated draft, without re-implementing the shape-based sequence alignment.
+    """
+    matcher = SequenceMatcher(
+        a=[token.signature() for token in source_tokens],
+        b=[token.signature() for token in draft_tokens],
+        autojunk=False,
+    )
+    pairs: list[tuple[StructureToken, StructureToken]] = []
+    for opcode, source_start, source_end, draft_start, draft_end in matcher.get_opcodes():
+        if opcode != "equal":
+            continue
+        pairs.extend(zip(source_tokens[source_start:source_end], draft_tokens[draft_start:draft_end]))
+    return pairs
+
+
 def compare_structure(
     source_text: str,
     draft_text: str,

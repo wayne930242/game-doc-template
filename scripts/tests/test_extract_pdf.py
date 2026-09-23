@@ -11,6 +11,7 @@ from extract_pdf import (
     build_image_filename,
     build_output_stem,
     clean_artifact_headings,
+    clean_list_continuations,
     clean_opendataloader_temp_image_links,
     clean_watermarks,
     detect_source_type,
@@ -496,3 +497,39 @@ class TestCleanArtifactHeadings:
     def test_missing_file_is_skipped(self, tmp_path):
         missing = tmp_path / "missing.md"
         clean_artifact_headings([missing])  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# clean_list_continuations
+# ---------------------------------------------------------------------------
+
+
+class TestCleanListContinuations:
+    def test_merges_wrapped_list_continuation(self, tmp_path):
+        target = tmp_path / "book.md"
+        target.write_text(
+            "But one should avoid overly graphic representations (unless this "
+            "was agreed\n"
+            "\n"
+            "- to during the Prelude phase). Such would not be part of the fun.\n",
+            encoding="utf-8",
+        )
+
+        clean_list_continuations([target])
+
+        content = target.read_text(encoding="utf-8")
+        assert "- to during" not in content
+        assert "agreed to during the Prelude phase" in content
+
+    def test_leaves_genuine_list_untouched(self, tmp_path):
+        target = tmp_path / "book.md"
+        original = "###### Heading\n\n- At last, your game has come to an end.\n"
+        target.write_text(original, encoding="utf-8")
+
+        clean_list_continuations([target])
+
+        assert target.read_text(encoding="utf-8") == original
+
+    def test_missing_file_is_skipped(self, tmp_path):
+        missing = tmp_path / "missing.md"
+        clean_list_continuations([missing])  # should not raise

@@ -9,6 +9,9 @@ from _markdown_utils import (
     clean_content,
     count_page_text_tokens,
     extract_markdown_image_targets,
+    find_list_continuation_items,
+    merge_list_continuation_at,
+    merge_list_continuations,
     split_markdown_sections,
     strip_artifact_headings,
     strip_markdown_images,
@@ -214,6 +217,150 @@ class TestStripArtifactHeadings:
     def test_no_artifact_headings(self):
         text = "just plain text"
         assert strip_artifact_headings(text) == text
+
+
+# ---------------------------------------------------------------------------
+# find_list_continuation_items / merge_list_continuation_at / merge_list_continuations
+#
+# Fixtures below are drawn from real OpenDataLoader breaks found in
+# kedamono-opera/data/markdown/Kedamono_Opera.md (lines 6975-6977 and 7011-7013).
+# ---------------------------------------------------------------------------
+
+REAL_POSITIVE = (
+    "But one should avoid overly graphic or grotesque representations of such "
+    "fates (unless this was agreed\n"
+    "\n"
+    "- to during the Prelude phase). Such would not be part of the fun of "
+    "Kedamono Opera.\n"
+)
+
+REAL_POSITIVE_MERGED = (
+    "But one should avoid overly graphic or grotesque representations of such "
+    "fates (unless this was agreed to during the Prelude phase). Such would not "
+    "be part of the fun of Kedamono Opera.\n"
+)
+
+SECOND_POSITIVE = (
+    "During a session, PCs can gain portents, usually called marking\n"
+    "\n"
+    "- them. There is no limit to the number of portents a kedamono may have "
+    "marked.\n"
+)
+
+
+class TestFindListContinuationItems:
+    def test_finds_real_break_after_agreed(self):
+        assert find_list_continuation_items(REAL_POSITIVE) == [3]
+
+    def test_ignores_list_item_after_heading(self):
+        text = "###### share WiTh oThers\n\n- At last, your game has come to an end.\n"
+        assert find_list_continuation_items(text) == []
+
+    def test_ignores_uppercase_list_item(self):
+        # Preceding paragraph deliberately does not end in terminal punctuation,
+        # so this isolates the lowercase-first-letter gate from the punctuation gate.
+        text = (
+            "Sphinxes are known to have a great deal of control over their own\n"
+            "\n"
+            "- As mentioned, cats disappear when close to death.\n"
+        )
+        assert find_list_continuation_items(text) == []
+
+    def test_ignores_item_after_sentence_ending_in_period(self):
+        text = "This is a complete sentence.\n\n- lowercase item that is a genuine list.\n"
+        assert find_list_continuation_items(text) == []
+
+    def test_ignores_item_after_sentence_ending_in_question_mark(self):
+        text = "Where did that mouse go?\n\n- lowercase but unrelated.\n"
+        assert find_list_continuation_items(text) == []
+
+    def test_ignores_genuine_multi_item_numbered_list(self):
+        text = (
+            "Continue to make checks until an ending condition is met\n"
+            "\n"
+            "- 1. One player makes a check\n"
+            "- 2. The check generates either a Triumph or a Twist\n"
+        )
+        assert find_list_continuation_items(text) == []
+
+    def test_ignores_item_after_another_list_item(self):
+        text = "- first item, itself a list\n\n- second lowercase item\n"
+        assert find_list_continuation_items(text) == []
+
+    def test_ignores_item_with_no_preceding_block(self):
+        text = "- to during the Prelude phase). Continuation with nothing before it.\n"
+        assert find_list_continuation_items(text) == []
+
+    def test_finds_multiple_breaks_in_one_document(self):
+        text = REAL_POSITIVE + "\n" + SECOND_POSITIVE
+        lines = find_list_continuation_items(text)
+        assert len(lines) == 2
+
+    def test_no_false_positive_on_plain_text(self):
+        assert find_list_continuation_items("just plain text\n\nmore text\n") == []
+
+
+class TestMergeListContinuationAt:
+    def test_merges_with_space_separator(self):
+        result = merge_list_continuation_at(REAL_POSITIVE, 3, separator=" ")
+        assert result == REAL_POSITIVE_MERGED
+
+    def test_merges_with_no_separator_for_chinese(self):
+        text = "他不願意透露\n\n- 這件事的真相。\n"
+        result = merge_list_continuation_at(text, 3, separator="")
+        assert result == "他不願意透露這件事的真相。\n"
+
+    def test_raises_when_no_block_at_line(self):
+        with pytest.raises(ValueError):
+            merge_list_continuation_at(REAL_POSITIVE, 99)
+
+    def test_raises_when_target_is_not_a_list_item(self):
+        text = "first paragraph\n\nsecond paragraph\n"
+        with pytest.raises(ValueError):
+            merge_list_continuation_at(text, 3)
+
+    def test_raises_when_no_preceding_block(self):
+        text = "- lone item with nothing before it\n"
+        with pytest.raises(ValueError):
+            merge_list_continuation_at(text, 1)
+
+
+class TestMergeListContinuations:
+    def test_merges_real_break_and_reports_count(self):
+        cleaned, count = merge_list_continuations(REAL_POSITIVE)
+        assert count == 1
+        assert cleaned == REAL_POSITIVE_MERGED
+        assert "- to during" not in cleaned
+
+    def test_merges_multiple_breaks_in_one_document(self):
+        text = REAL_POSITIVE + "\n" + SECOND_POSITIVE
+        cleaned, count = merge_list_continuations(text)
+        assert count == 2
+        assert "- to during" not in cleaned
+        assert "- them." not in cleaned
+        assert "agreed to during the Prelude phase" in cleaned
+        assert "marking them. There is no limit" in cleaned
+
+    def test_leaves_genuine_lists_untouched(self):
+        text = (
+            "Continue to make checks until an ending condition is met\n"
+            "\n"
+            "- 1. One player makes a check\n"
+            "- 2. The check generates either a Triumph or a Twist\n"
+            "\n"
+            "###### share WiTh oThers\n"
+            "\n"
+            "- At last, your game has come to an end.\n"
+        )
+        cleaned, count = merge_list_continuations(text)
+        assert count == 0
+        assert cleaned == text
+
+    def test_no_merges_returns_original_text_and_zero_count(self):
+        text = "just plain text\n\nmore text\n"
+        cleaned, count = merge_list_continuations(text)
+        assert count == 0
+        assert cleaned == text
 
 
 # ---------------------------------------------------------------------------

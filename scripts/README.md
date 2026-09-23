@@ -51,7 +51,7 @@ tesseract --list-langs
 
 ## 腳本清單
 
-以下依用途分類列出 `scripts/` 下全部 26 支 `.py` 檔案；檔名以 `_` 開頭者為內部共用庫，不直接執行。
+以下依用途分類列出 `scripts/` 下全部 30 支 `.py` 檔案；檔名以 `_` 開頭者為內部共用庫，不直接執行。
 
 ### 提取與章節
 
@@ -91,6 +91,7 @@ tesseract --list-langs
 | `translation_context.py` | 建立、驗證並判斷全文翻譯脈絡是否需要更新 |
 | `translation_completion.py` | 全書完成後重建導覽、執行 deterministic 守門檢查、建置網站並驗證搜尋索引；可用 `--progress-file` 指定純中文或雙語進度檔 |
 | `validate_translation_structure.py` | 比對來源與譯稿的 Markdown／MDX 區塊結構 |
+| `merge_translated_list_continuations.py` | 依英文原文位置比對，合併已翻譯 Markdown 中被誤判為清單項目的斷行續句 |
 | `draft.py` | 管理翻譯草稿檔（`path`／`chunk-path`／`writeback`／`clean`） |
 | `bilingual_prep.py` | 將來源英文 Markdown 轉換為含佔位符的雙語翻譯草稿 |
 
