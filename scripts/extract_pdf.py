@@ -36,7 +36,11 @@ from _layout_lib import (
     extract_page_text_pymupdf,
     probe_pymupdf_text_quality,
 )
-from _markdown_utils import merge_list_continuations, strip_artifact_headings
+from _markdown_utils import (
+    merge_list_continuations,
+    merge_paragraph_continuations,
+    strip_artifact_headings,
+)
 from _ocr_lib import (
     DEFAULT_OCR_DPI,
     DEFAULT_OCR_LANG,
@@ -331,6 +335,21 @@ def clean_list_continuations(output_files: list[Path]) -> None:
         if count:
             output_file.write_text(cleaned, encoding="utf-8")
             print(f"✓ 已合併斷行續句清單項目（{count} 處）: {output_file}")
+
+
+def clean_paragraph_continuations(output_files: list[Path]) -> None:
+    """合併 opendataloader 誤判為兩個獨立段落的斷行續句；疑似案例僅回報，不自動合併。"""
+    for output_file in output_files:
+        if not output_file.exists():
+            continue
+        original = output_file.read_text(encoding="utf-8")
+        cleaned, count, ambiguous = merge_paragraph_continuations(original)
+        if count:
+            output_file.write_text(cleaned, encoding="utf-8")
+            print(f"✓ 已合併段落斷行續句（{count} 處）: {output_file}")
+        if ambiguous:
+            lines_str = "、".join(str(line) for line in ambiguous)
+            print(f"⚠️  疑似段落斷行續句但未自動合併，需人工確認（第 {lines_str} 行）: {output_file}")
 
 
 def load_style_decisions(project_root: Path) -> dict:
@@ -882,6 +901,7 @@ def main():
         clean_opendataloader_temp_image_links(generated_markdown)
         clean_artifact_headings(generated_markdown)
         clean_list_continuations(generated_markdown)
+        clean_paragraph_continuations(generated_markdown)
 
     include_images = args.include_images
     if include_images is None:

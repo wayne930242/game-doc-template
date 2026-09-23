@@ -10,8 +10,11 @@ from _markdown_utils import (
     count_page_text_tokens,
     extract_markdown_image_targets,
     find_list_continuation_items,
+    find_paragraph_continuation_breaks,
     merge_list_continuation_at,
     merge_list_continuations,
+    merge_paragraph_continuation_at,
+    merge_paragraph_continuations,
     split_markdown_sections,
     strip_artifact_headings,
     strip_markdown_images,
@@ -360,6 +363,214 @@ class TestMergeListContinuations:
         text = "just plain text\n\nmore text\n"
         cleaned, count = merge_list_continuations(text)
         assert count == 0
+        assert cleaned == text
+
+
+# ---------------------------------------------------------------------------
+# find_paragraph_continuation_breaks / merge_paragraph_continuation_at /
+# merge_paragraph_continuations
+#
+# Fixtures below are drawn from real OpenDataLoader breaks found in
+# kedamono-opera/data/markdown/Kedamono_Opera.md (lines 63-67, 1244-1246,
+# 7627-7629, 9-11, 1768-1770, 201-207, 7897-7899, 7907-7909, 8331-8335).
+# ---------------------------------------------------------------------------
+
+REAL_PARAGRAPH_POSITIVE = (
+    "Kedamono Opera is a game that depicts nightmarish creatures with dualistic "
+    "natures. While monsters perhaps, at the same time, there’s room for negotiation\n"
+    "\n"
+    "with these other weaker creatures. How that comes about is something entirely "
+    "up to you.\n"
+)
+
+REAL_PARAGRAPH_POSITIVE_MERGED = (
+    "Kedamono Opera is a game that depicts nightmarish creatures with dualistic "
+    "natures. While monsters perhaps, at the same time, there’s room for negotiation "
+    "with these other weaker creatures. How that comes about is something entirely "
+    "up to you.\n"
+)
+
+# A three-block chain (a single sentence wrapped as three OpenDataLoader blocks);
+# the third block starts with a capitalized word ("Opera.") and is intentionally
+# out of scope for this lowercase-start rule, so only the first join is merged.
+REAL_PARAGRAPH_CHAIN = (
+    "Merely by reading this book, you will be equipped to do all of the "
+    "following: \x94 Create a Kedamono Opera story, whether that’s a novel, an "
+    "illustration, a\n"
+    "\n"
+    "manga, a movie, or even a play report of a session you’ve run. \x94 Create "
+    "your own kedamono in accordance with the rules set forth \x94 Create a "
+    "scenario for use during a session of Kedamono\n"
+    "\n"
+    "Opera.\n"
+)
+
+REAL_PARAGRAPH_CHAIN_MERGED_ONCE = (
+    "Merely by reading this book, you will be equipped to do all of the "
+    "following: \x94 Create a Kedamono Opera story, whether that’s a novel, an "
+    "illustration, a manga, a movie, or even a play report of a session you’ve "
+    "run. \x94 Create your own kedamono in accordance with the rules set forth "
+    "\x94 Create a scenario for use during a session of Kedamono\n"
+    "\n"
+    "Opera.\n"
+)
+
+# A bulleted list rendered inline with "\x94" markers (OpenDataLoader control-
+# character bullets); the wrapped bullet ending "even" is a genuine continuation,
+# but "kedamono are demons?" is itself a self-contained, punctuation-terminated
+# unit that still carries a "\x94" residue, so it must be reported as ambiguous
+# rather than merged.
+REAL_PARAGRAPH_RESIDUE = (
+    "\x94 Why would the Lord of Light test Teresa in this way? Can she even\n"
+    "\n"
+    "maintain her faith when faced with all of this? \x94 What happens to the "
+    "grail? It could still save a lot of people, after all. \x94 Would this "
+    "event change the stance of the church, who teaches that the\n"
+    "\n"
+    "kedamono are demons? \x94 Will later generations view Teresa as a saint or "
+    "as a witch?\n"
+)
+
+# A trailing page number leaked into the continuation ("225"); must be reported
+# as ambiguous rather than merged with the number embedded mid-paragraph.
+REAL_PARAGRAPH_PAGE_NUMBER_RESIDUE = (
+    "\x94 Portents featuring things not included in the scenario’s outline, but\n"
+    "\n"
+    "are interesting when they happen. 225\n"
+)
+
+# A table-of-contents entry ("basiC rules") rendered without heading markup;
+# looks like a lowercase-start continuation but is a decorative-caps artifact.
+REAL_TOC_NEGATIVE = "Table of ConTenTs\n\nbasiC rules\n\nPg. 2\n"
+
+# A repeated table label ("PORTENT" / "lure forms names"); too short to be a
+# genuine paragraph continuation.
+REAL_TABLE_LABEL_NEGATIVE = "PORTENT\n\nlure forms names\n"
+
+# A sidebar title ("Human-Like Appendage") interleaved into the main-column
+# flow by the PDF's two-column layout; neither half is a real continuation.
+REAL_SIDEBAR_TITLE_NEGATIVE = (
+    "Those who believe a lure is a real human cannot\n"
+    "\n"
+    "lure\n"
+    "\n"
+    "Human-Like Appendage\n"
+    "\n"
+    "perceive the kedamono’s main body.\n"
+)
+
+
+class TestFindParagraphContinuationBreaks:
+    def test_finds_real_break_about_negotiation(self):
+        assert find_paragraph_continuation_breaks(REAL_PARAGRAPH_POSITIVE) == ([3], [])
+
+    def test_finds_first_join_in_a_three_block_chain(self):
+        merges, ambiguous = find_paragraph_continuation_breaks(REAL_PARAGRAPH_CHAIN)
+        assert merges == [3]
+        assert ambiguous == []
+
+    def test_reports_self_contained_control_char_block_as_ambiguous(self):
+        merges, ambiguous = find_paragraph_continuation_breaks(REAL_PARAGRAPH_RESIDUE)
+        # The first join (ending "even" / starting "maintain") is a genuine,
+        # still-incomplete continuation and is merged; the second join lands on
+        # a self-contained "kedamono are demons?" block still carrying a
+        # control-character residue, so it is reported instead of merged.
+        assert merges == [3]
+        assert ambiguous == [5]
+
+    def test_reports_trailing_page_number_as_ambiguous(self):
+        merges, ambiguous = find_paragraph_continuation_breaks(
+            REAL_PARAGRAPH_PAGE_NUMBER_RESIDUE
+        )
+        assert merges == []
+        assert ambiguous == [3]
+
+    def test_ignores_table_of_contents_entry(self):
+        assert find_paragraph_continuation_breaks(REAL_TOC_NEGATIVE) == ([], [])
+
+    def test_ignores_repeated_table_label(self):
+        assert find_paragraph_continuation_breaks(REAL_TABLE_LABEL_NEGATIVE) == ([], [])
+
+    def test_ignores_sidebar_title_fragments(self):
+        merges, ambiguous = find_paragraph_continuation_breaks(REAL_SIDEBAR_TITLE_NEGATIVE)
+        assert merges == []
+        assert ambiguous == []
+
+    def test_ignores_item_after_sentence_ending_in_period(self):
+        text = "This is a complete sentence right here.\n\nlowercase but unrelated new paragraph.\n"
+        assert find_paragraph_continuation_breaks(text) == ([], [])
+
+    def test_ignores_heading_as_next_block(self):
+        text = "An unterminated paragraph fragment right\n\n###### a heading\n"
+        assert find_paragraph_continuation_breaks(text) == ([], [])
+
+    def test_ignores_list_item_as_next_block(self):
+        text = (
+            "An unterminated paragraph fragment right\n\n- a genuine list item here\n"
+        )
+        assert find_paragraph_continuation_breaks(text) == ([], [])
+
+    def test_ignores_short_next_fragment(self):
+        text = "A long enough preceding paragraph fragment right\n\ntiny bit\n"
+        assert find_paragraph_continuation_breaks(text) == ([], [])
+
+    def test_no_false_positive_on_plain_text(self):
+        text = "This is one paragraph.\n\nThis is another paragraph.\n"
+        assert find_paragraph_continuation_breaks(text) == ([], [])
+
+
+class TestMergeParagraphContinuationAt:
+    def test_merges_with_space_separator(self):
+        result = merge_paragraph_continuation_at(REAL_PARAGRAPH_POSITIVE, 3, separator=" ")
+        assert result == REAL_PARAGRAPH_POSITIVE_MERGED
+
+    def test_merges_with_no_separator_for_chinese(self):
+        text = "他不願意透露這件事\n\n的真相。\n"
+        result = merge_paragraph_continuation_at(text, 3, separator="")
+        assert result == "他不願意透露這件事的真相。\n"
+
+    def test_raises_when_no_block_at_line(self):
+        with pytest.raises(ValueError):
+            merge_paragraph_continuation_at(REAL_PARAGRAPH_POSITIVE, 99)
+
+    def test_raises_when_no_preceding_block(self):
+        text = "lone block with nothing before it\n"
+        with pytest.raises(ValueError):
+            merge_paragraph_continuation_at(text, 1)
+
+
+class TestMergeParagraphContinuations:
+    def test_merges_real_break_and_reports_count(self):
+        cleaned, count, ambiguous = merge_paragraph_continuations(REAL_PARAGRAPH_POSITIVE)
+        assert count == 1
+        assert ambiguous == []
+        assert cleaned == REAL_PARAGRAPH_POSITIVE_MERGED
+
+    def test_stops_a_chain_at_the_capitalized_block(self):
+        cleaned, count, ambiguous = merge_paragraph_continuations(REAL_PARAGRAPH_CHAIN)
+        assert count == 1
+        assert ambiguous == []
+        assert cleaned == REAL_PARAGRAPH_CHAIN_MERGED_ONCE
+
+    def test_merges_genuine_join_and_reports_residue_join_as_ambiguous(self):
+        cleaned, count, ambiguous = merge_paragraph_continuations(REAL_PARAGRAPH_RESIDUE)
+        assert count == 1
+        assert ambiguous == [3]
+        assert "Can she even maintain her faith" in cleaned
+        assert "who teaches that the\n\nkedamono are demons?" in cleaned
+
+    def test_leaves_toc_and_table_label_untouched(self):
+        for text in (REAL_TOC_NEGATIVE, REAL_TABLE_LABEL_NEGATIVE, REAL_SIDEBAR_TITLE_NEGATIVE):
+            cleaned, count, ambiguous = merge_paragraph_continuations(text)
+            assert count == 0
+            assert ambiguous == []
+            assert cleaned == text
+
+    def test_no_merges_returns_original_text_and_zero_count(self):
+        text = "just plain text\n\nmore text\n"
+        cleaned, count, ambiguous = merge_paragraph_continuations(text)
+        assert count == 0
+        assert ambiguous == []
         assert cleaned == text
 
 

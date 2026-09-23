@@ -19,6 +19,11 @@ LIST_ITEM_MARKER_RE = re.compile(r"^[ \t]*(?:[-+*]|\d+[.)])[ \t]+")
 BLOCK_HEADING_RE = re.compile(r"^#{1,6}(?:[ \t]|$)")
 _TERMINAL_PUNCTUATION = ".!?"
 _TRAILING_CLOSERS = "'\"’”)]}"
+_INTERNAL_CAP_ARTIFACT_RE = re.compile(r"[a-z][A-Z]")
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+_TRAILING_PAGE_NUMBER_RE = re.compile(r"[.!?]['\"’”)]*\s+\d{1,4}\s*$")
+_MIN_PARAGRAPH_CONTINUATION_PREV_WORDS = 4
+_MIN_PARAGRAPH_CONTINUATION_NEXT_WORDS = 3
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +132,32 @@ def find_list_continuation_items(text: str) -> list[int]:
     return matches
 
 
+def _splice_block_into_previous(
+    lines: list[str],
+    blocks: list[_TextBlock],
+    block_index: int,
+    first_text: str,
+    separator: str,
+) -> str:
+    """將 `blocks[block_index]` 併回 `blocks[block_index - 1]`，回傳合併後的完整文字。
+
+    `first_text` 是欲併入前一區塊尾端的文字（清單項目已去除 marker，一般段落則是整個
+    第一行）；該區塊其餘行原樣保留。呼叫端負責驗證 `block_index` 有效且非首個區塊。
+    """
+    item_block = blocks[block_index]
+    prev_block = blocks[block_index - 1]
+    item_rest_lines = item_block.text.split("\n")[1:]
+
+    merged_last_line = lines[prev_block.end].rstrip() + separator + first_text
+    new_lines = (
+        lines[: prev_block.end]
+        + [merged_last_line]
+        + item_rest_lines
+        + lines[item_block.end + 1 :]
+    )
+    return "\n".join(new_lines)
+
+
 def merge_list_continuation_at(text: str, item_start_line: int, separator: str = " ") -> str:
     """將起始於 `item_start_line`（1-based）的清單項目併回前一個區塊。
 
@@ -150,18 +181,8 @@ def merge_list_continuation_at(text: str, item_start_line: int, separator: str =
     if block_index == 0:
         raise ValueError(f"No preceding block to merge line {item_start_line} into")
 
-    prev_block = blocks[block_index - 1]
     item_first_text = first_line[marker_match.end() :]
-    item_rest_lines = item_block.text.split("\n")[1:]
-
-    merged_last_line = lines[prev_block.end].rstrip() + separator + item_first_text
-    new_lines = (
-        lines[: prev_block.end]
-        + [merged_last_line]
-        + item_rest_lines
-        + lines[item_block.end + 1 :]
-    )
-    return "\n".join(new_lines)
+    return _splice_block_into_previous(lines, blocks, block_index, item_first_text, separator)
 
 
 def merge_list_continuations(text: str) -> tuple[str, int]:
@@ -174,6 +195,129 @@ def merge_list_continuations(text: str) -> tuple[str, int]:
         text = merge_list_continuation_at(text, items[0], separator=" ")
         count += 1
     return text, count
+
+
+# ---------------------------------------------------------------------------
+# Paragraph-to-paragraph continuation breaks (sibling of the list-item case
+# above): OpenDataLoader sometimes splits one sentence across two plain
+# paragraph blocks instead of mangling it into a list item.
+# ---------------------------------------------------------------------------
+
+
+def _is_decorative_artifact(text: str) -> bool:
+    """判斷文字是否像裝飾性標題／目錄／表格標籤產物，而非一般段落文字。
+
+    OpenDataLoader 對美術字型（如全大寫小型大寫字）常會輸出全大寫，或大小寫字母交錯
+    的產物（例如 ``basiC``、``ConTenTs``），這類文字不是續句，與語言無關。
+    """
+    return bool(text) and (text.isupper() or bool(_INTERNAL_CAP_ARTIFACT_RE.search(text)))
+
+
+def find_paragraph_continuation_breaks(text: str) -> tuple[list[int], list[int]]:
+    """找出段落被誤斷為兩個區塊的續句，回傳 (可合併的區塊起始行號, 疑似但不確定的區塊起始行號)。
+
+    兩者皆為 1-based 行號，依前一個區塊判斷：前一個非空白區塊是不以句末標點結尾的一般
+    段落（非清單項目、非標題），且目前區塊也是以小寫字母開頭的一般段落。
+
+    以下情形視為明確不是續句而略過，不回報：前一或目前區塊字數過少，或呈現裝飾性標題／
+    目錄／表格標籤產物（全大寫或大小寫交錯，見 `_is_decorative_artifact`）。
+
+    以下情形視為結構上像續句，但含有殘留噪音而不安全直接合併，回報為疑似案例而非直接
+    合併：目前區塊已自成一個以句末標點結尾的完整單位、卻仍內含控制字元殘留（代表它
+    除了續句本身之外，還吸收了後面另一個被壓縮在同一行的清單項目，非單純的段落續
+    句），或目前區塊尾端疑似殘留頁碼數字。若目前區塊本身仍未以句末標點結尾（本身還
+    要再往下續接），則其中殘留的控制字元不影響這一次的合併判斷。
+    """
+    lines = text.split("\n")
+    blocks = list(_iter_text_blocks(lines))
+    merges: list[int] = []
+    ambiguous: list[int] = []
+    for prev_block, block in zip(blocks, blocks[1:]):
+        first_line = block.text.split("\n", 1)[0]
+        if LIST_ITEM_MARKER_RE.match(first_line):
+            continue
+        if _block_kind(block.text) != "paragraph":
+            continue
+        if not first_line or not first_line[0].islower():
+            continue
+        if _block_kind(prev_block.text) != "paragraph":
+            continue
+        if _ends_with_terminal_punctuation(prev_block.text):
+            continue
+
+        if (
+            len(prev_block.text.split()) < _MIN_PARAGRAPH_CONTINUATION_PREV_WORDS
+            or len(first_line.split()) < _MIN_PARAGRAPH_CONTINUATION_NEXT_WORDS
+            or _is_decorative_artifact(prev_block.text)
+            or _is_decorative_artifact(first_line)
+        ):
+            continue
+
+        block_is_self_contained = _ends_with_terminal_punctuation(block.text)
+        if (
+            block_is_self_contained and _CONTROL_CHAR_RE.search(block.text)
+        ) or _TRAILING_PAGE_NUMBER_RE.search(block.text):
+            ambiguous.append(block.start + 1)
+            continue
+
+        merges.append(block.start + 1)
+    return merges, ambiguous
+
+
+def merge_paragraph_continuation_at(text: str, block_start_line: int, separator: str = " ") -> str:
+    """將起始於 `block_start_line`（1-based）的一般段落區塊併回前一個區塊。
+
+    `separator` 是併回時該區塊文字與前一區塊之間插入的字元；中文譯文併合時應傳入空
+    字串（不加空格），英文原文併合則使用單一空格。
+    """
+    lines = text.split("\n")
+    blocks = list(_iter_text_blocks(lines))
+    block_index = next(
+        (index for index, block in enumerate(blocks) if block.start == block_start_line - 1),
+        None,
+    )
+    if block_index is None:
+        raise ValueError(f"No block starts at line {block_start_line}")
+    if block_index == 0:
+        raise ValueError(f"No preceding block to merge line {block_start_line} into")
+
+    first_line = blocks[block_index].text.split("\n", 1)[0]
+    return _splice_block_into_previous(lines, blocks, block_index, first_line, separator)
+
+
+def merge_paragraph_continuations(text: str) -> tuple[str, int, list[int]]:
+    """合併所有段落斷行續句，回傳 (合併後文字, 合併次數, 疑似案例起始行號列表)。
+
+    與語言相關（依英文小寫判斷）；疑似案例（含控制字元殘留或疑似頁碼殘留）不會被合併。
+    """
+    count = 0
+    ambiguous: list[int] = []
+    while True:
+        merges, ambiguous = find_paragraph_continuation_breaks(text)
+        if not merges:
+            break
+        text = merge_paragraph_continuation_at(text, merges[0], separator=" ")
+        count += 1
+    return text, count, ambiguous
+
+
+def find_paragraph_block_starts(
+    text: str, lo_line: int = 1, hi_line: int | None = None
+) -> list[int]:
+    """回傳 `[lo_line, hi_line)` 範圍內（1-based，`hi_line` 為 `None` 代表到檔尾）
+    所有一般段落區塊的起始行號，依出現順序排列。
+
+    供翻譯側續句合併工具在結構錨點之間，依序對齊來源與譯文段落區塊的位置。
+    """
+    lines = text.split("\n")
+    blocks = list(_iter_text_blocks(lines))
+    return [
+        block.start + 1
+        for block in blocks
+        if block.start + 1 >= lo_line
+        and (hi_line is None or block.start + 1 < hi_line)
+        and _block_kind(block.text) == "paragraph"
+    ]
 
 
 def split_markdown_sections(text: str) -> list[str]:

@@ -13,6 +13,7 @@ from extract_pdf import (
     clean_artifact_headings,
     clean_list_continuations,
     clean_opendataloader_temp_image_links,
+    clean_paragraph_continuations,
     clean_watermarks,
     detect_source_type,
     load_document_extraction_settings,
@@ -533,3 +534,57 @@ class TestCleanListContinuations:
     def test_missing_file_is_skipped(self, tmp_path):
         missing = tmp_path / "missing.md"
         clean_list_continuations([missing])  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# clean_paragraph_continuations
+# ---------------------------------------------------------------------------
+
+
+class TestCleanParagraphContinuations:
+    def test_merges_wrapped_paragraph_continuation(self, tmp_path, capsys):
+        target = tmp_path / "book.md"
+        target.write_text(
+            "Kedamono Opera is a game that depicts nightmarish creatures with "
+            "dualistic natures. While monsters perhaps, at the same time, "
+            "there’s room for negotiation\n"
+            "\n"
+            "with these other weaker creatures. How that comes about is "
+            "something entirely up to you.\n",
+            encoding="utf-8",
+        )
+
+        clean_paragraph_continuations([target])
+
+        content = target.read_text(encoding="utf-8")
+        assert "room for negotiation\n\nwith" not in content
+        assert "room for negotiation with these other weaker creatures" in content
+        assert "已合併段落斷行續句" in capsys.readouterr().out
+
+    def test_reports_ambiguous_case_without_merging(self, tmp_path, capsys):
+        target = tmp_path / "book.md"
+        original = (
+            "\x94 Portents featuring things not included in the scenario’s "
+            "outline, but\n"
+            "\n"
+            "are interesting when they happen. 225\n"
+        )
+        target.write_text(original, encoding="utf-8")
+
+        clean_paragraph_continuations([target])
+
+        assert target.read_text(encoding="utf-8") == original
+        assert "疑似段落斷行續句" in capsys.readouterr().out
+
+    def test_leaves_table_of_contents_untouched(self, tmp_path):
+        target = tmp_path / "book.md"
+        original = "Table of ConTenTs\n\nbasiC rules\n\nPg. 2\n"
+        target.write_text(original, encoding="utf-8")
+
+        clean_paragraph_continuations([target])
+
+        assert target.read_text(encoding="utf-8") == original
+
+    def test_missing_file_is_skipped(self, tmp_path):
+        missing = tmp_path / "missing.md"
+        clean_paragraph_continuations([missing])  # should not raise
