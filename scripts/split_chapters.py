@@ -37,6 +37,7 @@
 }
 """
 
+import argparse
 import json
 import os
 import re
@@ -600,20 +601,23 @@ def split_chapters(config: dict, project_root: Path):
     print(f"✅ 完成！共產生 {total_files} 個檔案，插入 {total_images} 張圖片")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="根據設定檔將 Markdown 內容拆分成多個章節檔案")
+    parser.add_argument("--init", action="store_true", help="建立範例設定檔（chapters.json）並結束")
+    parser.add_argument("--config", type=Path, default=None, help="指定設定檔路徑（預設: chapters.json）")
+    return parser.parse_args()
+
+
 def main():
     project_root = Path(__file__).resolve().parents[1]
     default_config = project_root / "chapters.json"
+    args = parse_args()
 
-    # 處理命令列參數
-    if "--init" in sys.argv:
+    if args.init:
         create_example_config(default_config)
         return
 
-    config_path = default_config
-    if "--config" in sys.argv:
-        idx = sys.argv.index("--config")
-        if idx + 1 < len(sys.argv):
-            config_path = Path(sys.argv[idx + 1])
+    config_path = args.config if args.config is not None else default_config
 
     if not config_path.exists():
         print(f"❌ 找不到設定檔: {config_path}")

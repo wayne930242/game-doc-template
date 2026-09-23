@@ -48,6 +48,8 @@ def test_cmd_set_document_format_for_document(tmp_path):
         document_key="Household_1.2",
         layout_profile="double-column",
         page_text_engine="markitdown",
+        pymupdf_sort_text=None,
+        watermarks=None,
         aside_note=None,
         aside_tip=None,
         aside_caution=None,

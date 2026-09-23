@@ -165,6 +165,12 @@ uv run python scripts/extract_pdf.py data/scans/page001.jpg
 
 # 整個 jpg/png 掃描資料夾 OCR
 uv run python scripts/extract_pdf.py data/scans/your-rulebook-pages
+
+# 移除來源 PDF 的購買浮水印（可重複指定多個字串）
+uv run python scripts/extract_pdf.py data/pdfs/your-rulebook.pdf --watermark "Your Name (Order #12345)"
+
+# 版面雜訊較多、多欄或表單版面被 pymupdf 幾何排序交錯時，可關閉排序
+uv run python scripts/extract_pdf.py data/pdfs/your-rulebook.pdf --no-pymupdf-sort
 ```
 
 輸出：
@@ -182,6 +188,10 @@ uv run python scripts/extract_pdf.py data/scans/your-rulebook-pages
 - OCR 預設使用 `chi_tra+eng`。
 - 日文來源建議使用 `--ocr-lang jpn+eng`；英文來源建議使用 `--ocr-lang eng`。
 - 若同頁真的同時混排繁中、日文、英文，可改用 `--ocr-lang chi_tra+jpn+eng`，但仍建議優先使用最小必要語言集合。
+- pymupdf 引擎預設依幾何位置排序文字（`sort=True`），版面雜訊較多、多欄或表單版面被交錯時可用 `--no-pymupdf-sort` 關閉。
+- 可用 `--watermark "字串"` 移除輸出 Markdown 中的購買浮水印等重複字串，可重複指定多次。
+- 使用 `opendataloader` 引擎時，整本 PDF 只會啟動一次 Java 轉換（以頁碼分隔符切分逐頁內容，不隨頁數增加而多次啟動），並自動移除逐頁暫存圖片連結、以及純數字或空白的頁碼裝飾標題（如 `# 33`、`##`）。
+- 已知限制（僅回報未修復）：opendataloader 對部分小型大寫（small-caps）字體可能輸出大小寫顛倒的文字，且可能把目錄（TOC）條目誤判為標題；兩者皆需人工檢查。
 
 每文件設定可寫在 `style-decisions.json`：
 
@@ -189,6 +199,7 @@ uv run python scripts/extract_pdf.py data/scans/your-rulebook-pages
 {
   "document_format": {
     "layout_profile": "single-column",
+    "watermarks": ["Your Name (Order #12345)"],
     "documents": {
       "Household_1.2": {
         "layout_profile": "double-column",
@@ -196,6 +207,9 @@ uv run python scripts/extract_pdf.py data/scans/your-rulebook-pages
       },
       "ScannedBook": {
         "page_text_engine": "ocr"
+      },
+      "NoisyLayoutBook": {
+        "pymupdf_sort_text": false
       }
     }
   }
@@ -207,6 +221,7 @@ uv run python scripts/extract_pdf.py data/scans/your-rulebook-pages
 - `document_format.documents.<pdf_stem>` 會覆蓋特定文件。
 - `page_text_engine` 可不填；留空時由 `layout_profile` 自動決定。
 - 掃描 PDF 可將 `page_text_engine` 設成 `ocr`。
+- `pymupdf_sort_text`（布林）與 `watermarks`（字串陣列）可設全域預設，也可用 `documents.<pdf_stem>` 覆蓋特定文件；CLI 參數 `--pymupdf-sort`/`--no-pymupdf-sort`、`--watermark` 一律優先於 `style-decisions.json`。
 
 ### style-decisions 管理
 
@@ -237,6 +252,11 @@ uv run python scripts/style_decisions.py set-document-format \
 uv run python scripts/style_decisions.py set-document-format \
   --document-key ScannedBook \
   --page-text-engine ocr
+
+# 設定浮水印移除與 pymupdf 排序（可全域，也可指定 document key）
+uv run python scripts/style_decisions.py set-document-format \
+  --watermark "Your Name (Order #12345)" \
+  --pymupdf-sort-text false
 
 # 加入翻譯備註
 uv run python scripts/style_decisions.py add-translation-note \

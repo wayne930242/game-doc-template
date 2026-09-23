@@ -10,10 +10,15 @@ import json
 from extract_pdf import (
     build_image_filename,
     build_output_stem,
+    clean_artifact_headings,
+    clean_opendataloader_temp_image_links,
+    clean_watermarks,
     detect_source_type,
     load_document_extraction_settings,
     normalize_layout_profile,
     normalize_page_text_engine,
+    normalize_pymupdf_sort_text,
+    normalize_watermarks,
     resolve_page_text_strategy,
     write_full_markdown,
 )
@@ -291,3 +296,203 @@ class TestResolvePageTextStrategy:
         assert strategy["page_text_engine_source"] == "cli"
         assert strategy["layout_profile"] == "single-column"
         assert strategy["layout_profile_source"] == "cli"
+
+    def test_pymupdf_sort_text_and_watermarks_default(self, tmp_path):
+        strategy = resolve_page_text_strategy(
+            tmp_path / "book.pdf", tmp_path, requested_engine="pymupdf", requested_layout="single-column"
+        )
+        assert strategy["pymupdf_sort_text"] is True
+        assert strategy["pymupdf_sort_text_source"] == "default"
+        assert strategy["watermarks"] == []
+        assert strategy["watermarks_source"] == "default"
+
+    def test_pymupdf_sort_text_from_style_decisions(self, tmp_path):
+        _write_style_decisions(tmp_path, {"pymupdf_sort_text": False, "watermarks": ["Order #123"]})
+
+        strategy = resolve_page_text_strategy(
+            tmp_path / "book.pdf", tmp_path, requested_engine="pymupdf", requested_layout="single-column"
+        )
+
+        assert strategy["pymupdf_sort_text"] is False
+        assert strategy["pymupdf_sort_text_source"] == "style-decisions"
+        assert strategy["watermarks"] == ["Order #123"]
+        assert strategy["watermarks_source"] == "style-decisions"
+
+    def test_cli_pymupdf_sort_text_and_watermarks_beat_style_decisions(self, tmp_path):
+        _write_style_decisions(tmp_path, {"pymupdf_sort_text": False, "watermarks": ["Order #123"]})
+
+        strategy = resolve_page_text_strategy(
+            tmp_path / "book.pdf",
+            tmp_path,
+            requested_engine="pymupdf",
+            requested_layout="single-column",
+            requested_pymupdf_sort_text=True,
+            requested_watermarks=["Custom Watermark"],
+        )
+
+        assert strategy["pymupdf_sort_text"] is True
+        assert strategy["pymupdf_sort_text_source"] == "cli"
+        assert strategy["watermarks"] == ["Custom Watermark"]
+        assert strategy["watermarks_source"] == "cli"
+
+    def test_document_level_watermarks_override_global(self, tmp_path):
+        _write_style_decisions(
+            tmp_path,
+            {
+                "watermarks": ["Global Mark"],
+                "documents": {"book": {"watermarks": ["Doc Mark"]}},
+            },
+        )
+
+        strategy = resolve_page_text_strategy(
+            tmp_path / "book.pdf", tmp_path, requested_engine="pymupdf", requested_layout="single-column"
+        )
+
+        assert strategy["watermarks"] == ["Doc Mark"]
+
+    def test_image_source_still_resolves_watermarks(self, tmp_path):
+        _write_style_decisions(tmp_path, {"watermarks": ["Mark"]})
+
+        strategy = resolve_page_text_strategy(
+            tmp_path / "scan.jpg", tmp_path, requested_engine="auto", requested_layout="auto"
+        )
+
+        assert strategy["source_type"] == "image"
+        assert strategy["watermarks"] == ["Mark"]
+
+
+# ---------------------------------------------------------------------------
+# normalize_pymupdf_sort_text / normalize_watermarks
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizePymupdfSortText:
+    def test_true(self):
+        assert normalize_pymupdf_sort_text(True) is True
+
+    def test_false(self):
+        assert normalize_pymupdf_sort_text(False) is False
+
+    def test_none_returns_none(self):
+        assert normalize_pymupdf_sort_text(None) is None
+
+    def test_non_bool_returns_none(self):
+        assert normalize_pymupdf_sort_text("true") is None
+        assert normalize_pymupdf_sort_text(1) is None
+
+
+class TestNormalizeWatermarks:
+    def test_list_of_strings(self):
+        assert normalize_watermarks(["a", "b"]) == ["a", "b"]
+
+    def test_empty_list_is_valid(self):
+        assert normalize_watermarks([]) == []
+
+    def test_none_returns_none(self):
+        assert normalize_watermarks(None) is None
+
+    def test_non_list_returns_none(self):
+        assert normalize_watermarks("watermark") is None
+
+    def test_list_with_non_string_returns_none(self):
+        assert normalize_watermarks(["a", 1]) is None
+
+
+# ---------------------------------------------------------------------------
+# clean_watermarks
+# ---------------------------------------------------------------------------
+
+
+class TestCleanWatermarks:
+    def test_removes_watermark_from_file(self, tmp_path):
+        target = tmp_path / "book.md"
+        target.write_text("intro Wei Hung (Order #53155335) body", encoding="utf-8")
+
+        clean_watermarks([target], ["Wei Hung (Order #53155335)"])
+
+        assert "Wei Hung" not in target.read_text(encoding="utf-8")
+
+    def test_multiple_watermarks(self, tmp_path):
+        target = tmp_path / "book.md"
+        target.write_text("a MARK1 b MARK2 c", encoding="utf-8")
+
+        clean_watermarks([target], ["MARK1", "MARK2"])
+
+        content = target.read_text(encoding="utf-8")
+        assert "MARK1" not in content
+        assert "MARK2" not in content
+
+    def test_no_watermarks_leaves_file_untouched(self, tmp_path):
+        target = tmp_path / "book.md"
+        target.write_text("unchanged content", encoding="utf-8")
+
+        clean_watermarks([target], [])
+
+        assert target.read_text(encoding="utf-8") == "unchanged content"
+
+    def test_missing_file_is_skipped(self, tmp_path):
+        missing = tmp_path / "missing.md"
+        clean_watermarks([missing], ["anything"])  # should not raise
+
+    def test_no_match_does_not_rewrite_file(self, tmp_path):
+        target = tmp_path / "book.md"
+        target.write_text("clean content", encoding="utf-8")
+        original_mtime = target.stat().st_mtime_ns
+
+        clean_watermarks([target], ["not present"])
+
+        assert target.stat().st_mtime_ns == original_mtime
+
+
+# ---------------------------------------------------------------------------
+# clean_opendataloader_temp_image_links
+# ---------------------------------------------------------------------------
+
+
+class TestCleanOpendataloaderTempImageLinks:
+    def test_removes_temp_image_link(self, tmp_path):
+        target = tmp_path / "book.md"
+        target.write_text(
+            "before ![img](page_3_images/pic.png) after",
+            encoding="utf-8",
+        )
+
+        clean_opendataloader_temp_image_links([target])
+
+        content = target.read_text(encoding="utf-8")
+        assert "page_3_images" not in content
+        assert "before" in content
+        assert "after" in content
+
+    def test_keeps_non_temp_image_links(self, tmp_path):
+        target = tmp_path / "book.md"
+        target.write_text("![alt](images/book/pic.png)", encoding="utf-8")
+
+        clean_opendataloader_temp_image_links([target])
+
+        assert "images/book/pic.png" in target.read_text(encoding="utf-8")
+
+    def test_missing_file_is_skipped(self, tmp_path):
+        missing = tmp_path / "missing.md"
+        clean_opendataloader_temp_image_links([missing])  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# clean_artifact_headings
+# ---------------------------------------------------------------------------
+
+
+class TestCleanArtifactHeadings:
+    def test_removes_numeric_and_empty_headings(self, tmp_path):
+        target = tmp_path / "book.md"
+        target.write_text("# 33\n\n## Real Heading\ncontent\n\n##\n", encoding="utf-8")
+
+        clean_artifact_headings([target])
+
+        content = target.read_text(encoding="utf-8")
+        assert "# 33" not in content
+        assert "## Real Heading" in content
+
+    def test_missing_file_is_skipped(self, tmp_path):
+        missing = tmp_path / "missing.md"
+        clean_artifact_headings([missing])  # should not raise

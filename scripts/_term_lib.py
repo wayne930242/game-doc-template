@@ -221,6 +221,21 @@ def parse_doc(text: str) -> Doc:
     return doc
 
 
+def _strip_non_alnum_edges(text: str) -> tuple[str, int, int]:
+    """Strip leading/trailing non-alphanumeric characters (e.g. Markdown table
+    pipes) that spaCy's tokenizer leaves attached, such as ``|Bolia|``."""
+    first: int | None = None
+    last: int | None = None
+    for i, ch in enumerate(text):
+        if ch.isalnum():
+            if first is None:
+                first = i
+            last = i
+    if first is None:
+        return "", 0, len(text)
+    return text[first : last + 1], first, len(text) - last - 1
+
+
 def _normalized_tokens(doc: Doc) -> list[dict[str, Any]]:
     key = id(doc)
     cached = _NORM_CACHE.get(key)
@@ -230,13 +245,28 @@ def _normalized_tokens(doc: Doc) -> list[dict[str, Any]]:
     for tok in doc:
         if tok.is_space or tok.is_punct:
             continue
-        norm = (tok.lemma_ or tok.lower_).lower()
+        text = tok.text
+        core, lead, trail = _strip_non_alnum_edges(text)
+        if not core:
+            continue
+        if lead or trail:
+            # Punctuation stuck to the word (spaCy left it as one token); match
+            # on the bare surface form rather than a lemma that was never computed.
+            norm = core.lower()
+            lower = core.lower()
+            start = tok.idx + lead
+            end = tok.idx + len(text) - trail
+        else:
+            norm = (tok.lemma_ or tok.lower_).lower()
+            lower = tok.lower_
+            start = tok.idx
+            end = tok.idx + len(text)
         tokens.append(
             {
                 "norm": norm,
-                "lower": tok.lower_,
-                "start": tok.idx,
-                "end": tok.idx + len(tok.text),
+                "lower": lower,
+                "start": start,
+                "end": end,
             }
         )
     _NORM_CACHE[key] = tokens

@@ -56,3 +56,38 @@ def test_is_managed_term_requires_flag_or_approved_status():
     assert tl.is_managed_term("Move", {"status": "approved"}) is True
     assert tl.is_managed_term("Move", {"status": "candidate"}) is False
     assert tl.is_managed_term("Move", None) is False
+
+
+def test_count_term_matches_term_inside_markdown_table_cell():
+    if not tl.SPACY_AVAILABLE:
+        import pytest
+
+        pytest.skip("spaCy not available")
+
+    corpus = {
+        "docs/a.md": (
+            "| Faction | Ally |\n"
+            "| --- | --- |\n"
+            "| Bolia | Naus |\n"
+        )
+    }
+
+    total, files = tl.count_term(corpus, "Bolia")
+
+    assert total == 1
+    assert files["docs/a.md"] == 1
+
+
+def test_normalized_tokens_strips_markdown_table_pipes_from_edges(monkeypatch):
+    if not tl.SPACY_AVAILABLE:
+        import pytest
+
+        pytest.skip("spaCy not available")
+
+    doc = tl.parse_doc("| Bolia | Naus |")
+    tokens = tl._normalized_tokens(doc)
+    norms = [t["norm"] for t in tokens]
+
+    assert "bolia" in norms
+    assert "naus" in norms
+    assert not any(norm.startswith("|") or norm.endswith("|") for norm in norms)

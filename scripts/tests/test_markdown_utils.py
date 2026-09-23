@@ -10,6 +10,7 @@ from _markdown_utils import (
     count_page_text_tokens,
     extract_markdown_image_targets,
     split_markdown_sections,
+    strip_artifact_headings,
     strip_markdown_images,
     yaml_safe,
 )
@@ -159,6 +160,60 @@ class TestSplitMarkdownSections:
         text = "intro\n### Sub\ncontent"
         result = split_markdown_sections(text)
         assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# strip_artifact_headings
+# ---------------------------------------------------------------------------
+
+class TestStripArtifactHeadings:
+    def test_removes_numeric_only_heading(self):
+        text = "content\n\n# 33\n\nmore content"
+        result = strip_artifact_headings(text)
+        assert "# 33" not in result
+        assert "content" in result
+        assert "more content" in result
+
+    def test_removes_empty_heading(self):
+        text = "content\n\n##\n\nmore content"
+        result = strip_artifact_headings(text)
+        assert "##" not in result
+
+    def test_removes_empty_heading_with_trailing_space(self):
+        text = "content\n\n## \n\nmore content"
+        result = strip_artifact_headings(text)
+        assert "## " not in result
+
+    def test_keeps_real_headings(self):
+        text = "# Introduction\ncontent\n## Combat Rules\nmore"
+        result = strip_artifact_headings(text)
+        assert "# Introduction" in result
+        assert "## Combat Rules" in result
+
+    def test_keeps_heading_with_numeric_and_text(self):
+        text = "## Chapter 33: The Beginning"
+        assert strip_artifact_headings(text) == text
+
+    def test_collapses_blank_lines_left_behind(self):
+        text = "line1\n\n# 5\n\nline2"
+        result = strip_artifact_headings(text)
+        assert "\n\n\n" not in result
+
+    def test_mixed_real_and_artifact_headings(self):
+        text = "# 6\n\n### Real Section\ncontent\n\n#\n\n## Another Real One"
+        result = strip_artifact_headings(text)
+        lines = result.splitlines()
+        assert "# 6" not in lines
+        assert "#" not in lines
+        assert "### Real Section" in result
+        assert "## Another Real One" in result
+
+    def test_empty_input(self):
+        assert strip_artifact_headings("") == ""
+
+    def test_no_artifact_headings(self):
+        text = "just plain text"
+        assert strip_artifact_headings(text) == text
 
 
 # ---------------------------------------------------------------------------

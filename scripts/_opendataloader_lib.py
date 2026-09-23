@@ -10,6 +10,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+_PAGE_SEPARATOR_TEMPLATE = "<!--ODL-PAGE-%page-number%-->"
+_PAGE_SEPARATOR_RE = re.compile(r"<!--ODL-PAGE-(\d+)-->")
+
 _availability_cache: dict[str, object] | None = None
 
 
@@ -104,35 +107,26 @@ def convert_pdf_to_markdown(pdf_path: Path, output_dir: Path) -> str | None:
         return md_files[0].read_text(encoding="utf-8")
 
 
-def split_pages_content(content: str, total_pages: int) -> list[tuple[int, str]] | None:
-    """依分隔符（\\n---\\n 或換頁符）切分內容；無法可靠切分時回傳 None。"""
-    page_separator_pattern = re.compile(r"\n---\n|\f")
-    raw_pages = [p for p in page_separator_pattern.split(content) if p.strip()]
-    if len(raw_pages) == total_pages or (
-        len(raw_pages) > 1 and abs(len(raw_pages) - total_pages) <= 2
-    ):
-        return [(i + 1, text.strip()) for i, text in enumerate(raw_pages)]
-    return None
+def split_pages_by_marker(content: str) -> list[tuple[int, str]]:
+    """依 `_PAGE_SEPARATOR_RE` 標記切分整份 Markdown 內容為逐頁清單。"""
+    matches = list(_PAGE_SEPARATOR_RE.finditer(content))
+    pages: list[tuple[int, str]] = []
+    for i, match in enumerate(matches):
+        page_num = int(match.group(1))
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
+        pages.append((page_num, content[start:end].strip()))
+    return pages
 
 
-def convert_pdf_pages(
-    pdf_path: Path,
-    progress_every: int = 25,
-) -> list[tuple[int, str]]:
+def convert_pdf_pages(pdf_path: Path) -> list[tuple[int, str]]:
     """逐頁提取 PDF 並回傳 (page_num, text) 列表。
 
-    使用 opendataloader 的 pages 參數逐頁提取，
-    以便產生與其他引擎一致的 <!-- PAGE N --> 標記。
+    整份 PDF 只呼叫一次 opendataloader（單一 Java 行程），
+    透過 markdown_page_separator 標記頁碼後再切分，
+    以產生與其他引擎一致的 <!-- PAGE N --> 標記，且不隨頁數增加而多次啟動 Java。
     """
-    import pymupdf
-
-    doc = pymupdf.open(str(pdf_path))
-    total_pages = len(doc)
-    doc.close()
-
     import opendataloader_pdf
-
-    pages: list[tuple[int, str]] = []
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         opendataloader_pdf.convert(
@@ -140,6 +134,7 @@ def convert_pdf_pages(
             output_dir=tmp_dir,
             format="markdown",
             quiet=True,
+            markdown_page_separator=_PAGE_SEPARATOR_TEMPLATE,
         )
 
         md_files = list(Path(tmp_dir).glob("**/*.md"))
@@ -149,60 +144,7 @@ def convert_pdf_pages(
 
         content = md_files[0].read_text(encoding="utf-8")
 
-    # opendataloader 輸出可能包含頁面分隔標記（如 --- 或換頁符）
-    # 使用 pymupdf 取得頁數，然後嘗試按分隔符切分
-    # 如果無法可靠切分，就將整份內容作為單頁處理，再用 pymupdf 頁碼對應
-    split_result = split_pages_content(content, total_pages)
-    if split_result is not None:
-        pages = split_result
-    else:
-        pages = _convert_pages_individually(pdf_path, total_pages, progress_every)
-
-    return pages
-
-
-def _convert_pages_individually(
-    pdf_path: Path,
-    total_pages: int,
-    progress_every: int,
-) -> list[tuple[int, str]]:
-    """逐頁呼叫 opendataloader 提取（fallback 模式）。"""
-    import pymupdf
-    import opendataloader_pdf
-
-    pages: list[tuple[int, str]] = []
-    doc = pymupdf.open(str(pdf_path))
-
-    try:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            for page_num in range(1, total_pages + 1):
-                # 提取單頁 PDF
-                single = pymupdf.open()
-                single.insert_pdf(doc, from_page=page_num - 1, to_page=page_num - 1)
-                tmp_pdf = Path(tmp_dir) / f"page_{page_num}.pdf"
-                single.save(str(tmp_pdf))
-                single.close()
-
-                page_out_dir = Path(tmp_dir) / f"page_{page_num}_out"
-                page_out_dir.mkdir()
-
-                opendataloader_pdf.convert(
-                    input_path=[str(tmp_pdf)],
-                    output_dir=str(page_out_dir),
-                    format="markdown",
-                    quiet=True,
-                )
-
-                md_files = list(page_out_dir.glob("**/*.md"))
-                text = md_files[0].read_text(encoding="utf-8").strip() if md_files else ""
-                pages.append((page_num, text))
-
-                if progress_every > 0 and page_num % progress_every == 0:
-                    print(f"↻ 分頁提取進度（opendataloader）: {page_num}/{total_pages}")
-    finally:
-        doc.close()
-
-    return pages
+    return split_pages_by_marker(content)
 
 
 def write_pages_file(

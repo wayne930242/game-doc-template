@@ -11,6 +11,7 @@ from urllib.parse import unquote
 LINKED_MARKDOWN_IMAGE_RE = re.compile(r"\[!\[[^\]]*]\([^)]+\)]\([^)]+\)")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*]\([^)]+\)")
 MARKDOWN_HEADING_RE = re.compile(r"^#{1,3}\s+\S")
+ARTIFACT_HEADING_RE = re.compile(r"^#{1,6}[ \t]*\d*[ \t]*$", re.MULTILINE)
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +36,18 @@ def extract_markdown_image_targets(text: str) -> list[str]:
         if target:
             targets.append(unquote(target))
     return targets
+
+
+def strip_artifact_headings(text: str) -> str:
+    """移除純數字或空白的 Markdown 標題（頁碼裝飾產物，與語言無關）。
+
+    OpenDataLoader 等來源可能把頁面折角頁碼或裝飾線渲染成獨立標題
+    （如 ``# 33``、``##``），這類標題不含實質內容，可安全移除。
+    此規則不涉及語言，翻譯後的 Markdown 也適用。
+    """
+    cleaned = ARTIFACT_HEADING_RE.sub("", text)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def split_markdown_sections(text: str) -> list[str]:

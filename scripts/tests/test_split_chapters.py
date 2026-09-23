@@ -11,7 +11,9 @@ from split_chapters import (
     infer_source_stem,
     build_page_text_stats,
     group_images_by_page,
+    main,
     normalize_files,
+    parse_args,
     resolve_config,
     split_chapters,
     write_meta_yml,
@@ -496,3 +498,78 @@ class TestSplitChaptersOutputDir:
         page = tmp_path / "docs" / "src" / "content" / "docs" / "rules" / "index.md"
         assert page.exists()
         assert not (tmp_path / "docs" / "src" / "content" / "docs" / "bilingual").exists()
+
+
+# ---------------------------------------------------------------------------
+# CLI argument parsing
+# ---------------------------------------------------------------------------
+
+
+class TestParseArgs:
+    def test_help_exits_cleanly(self, monkeypatch, capsys):
+        monkeypatch.setattr("sys.argv", ["split_chapters.py", "--help"])
+        with pytest.raises(SystemExit) as exc_info:
+            parse_args()
+        assert exc_info.value.code == 0
+        assert "usage" in capsys.readouterr().out.lower()
+
+    def test_no_args_defaults(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["split_chapters.py"])
+        args = parse_args()
+        assert args.init is False
+        assert args.config is None
+
+    def test_init_flag(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["split_chapters.py", "--init"])
+        args = parse_args()
+        assert args.init is True
+
+    def test_config_flag(self, monkeypatch, tmp_path):
+        config_path = tmp_path / "custom.json"
+        monkeypatch.setattr("sys.argv", ["split_chapters.py", "--config", str(config_path)])
+        args = parse_args()
+        assert args.config == config_path
+
+
+class TestMainSideEffects:
+    def test_help_does_not_touch_filesystem(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("sys.argv", ["split_chapters.py", "--help"])
+        with pytest.raises(SystemExit):
+            main()
+        assert list(tmp_path.iterdir()) == []
+
+    def test_missing_config_exits_with_error(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "sys.argv", ["split_chapters.py", "--config", str(tmp_path / "missing.json")]
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+
+    def test_init_calls_create_example_config(self, monkeypatch, tmp_path):
+        import split_chapters as sc
+
+        monkeypatch.setattr("sys.argv", ["split_chapters.py", "--init"])
+        calls: list[Path] = []
+        monkeypatch.setattr(sc, "create_example_config", lambda path: calls.append(path))
+
+        main()
+
+        assert len(calls) == 1
+        assert calls[0].name == "chapters.json"
+
+    def test_config_flag_used_when_provided(self, monkeypatch, tmp_path):
+        import split_chapters as sc
+
+        config_path = tmp_path / "custom.json"
+        config_path.write_text('{"chapters": {}}', encoding="utf-8")
+        monkeypatch.setattr("sys.argv", ["split_chapters.py", "--config", str(config_path)])
+
+        loaded: list[Path] = []
+        monkeypatch.setattr(sc, "load_config", lambda path: loaded.append(path) or {"chapters": {}})
+        monkeypatch.setattr(sc, "split_chapters", lambda config, project_root: None)
+
+        main()
+
+        assert loaded == [config_path]

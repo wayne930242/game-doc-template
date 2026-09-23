@@ -106,10 +106,14 @@ def sample_page_indices(total_pages: int, max_samples: int = 12) -> list[int]:
     return sorted({round(i * (total_pages - 1) / (max_samples - 1)) for i in range(max_samples)})
 
 
-def extract_page_text_pymupdf(page) -> str:
-    """使用 pymupdf 直接提取單頁文字。"""
+def extract_page_text_pymupdf(page, sort: bool = True) -> str:
+    """使用 pymupdf 直接提取單頁文字。
+
+    ``sort=True``（預設）依幾何位置排序文字，但可能使多欄或表單版面交錯；
+    版面雜訊較多時可傳入 ``sort=False``。
+    """
     try:
-        text = page.get_text("text", sort=True)
+        text = page.get_text("text", sort=sort)
     except TypeError:
         try:
             text = page.get_text("text")

@@ -20,6 +20,7 @@ PDF 提取工具
 
 import argparse
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -35,6 +36,7 @@ from _layout_lib import (
     extract_page_text_pymupdf,
     probe_pymupdf_text_quality,
 )
+from _markdown_utils import strip_artifact_headings
 from _ocr_lib import (
     DEFAULT_OCR_DPI,
     DEFAULT_OCR_LANG,
@@ -110,6 +112,30 @@ def normalize_layout_profile(value: object) -> str | None:
     return None
 
 
+def normalize_pymupdf_sort_text(value: object) -> bool | None:
+    """正規化 pymupdf 幾何排序設定。"""
+    if isinstance(value, bool):
+        return value
+    return None
+
+
+def normalize_watermarks(value: object) -> list[str] | None:
+    """正規化要移除的浮水印字串清單。"""
+    if not isinstance(value, list):
+        return None
+    if not all(isinstance(item, str) for item in value):
+        return None
+    return list(value)
+
+
+DOCUMENT_FORMAT_FIELDS = (
+    ("page_text_engine", normalize_page_text_engine),
+    ("layout_profile", normalize_layout_profile),
+    ("pymupdf_sort_text", normalize_pymupdf_sort_text),
+    ("watermarks", normalize_watermarks),
+)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="將 PDF / EPUB / 圖片來源提取成可切分的 Markdown")
     parser.add_argument("source_file", help="來源 PDF / EPUB / 圖片檔案或圖片資料夾")
@@ -147,6 +173,28 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_OCR_DPI,
         help=f"PDF 走 OCR 時的頁面 render DPI（預設: {DEFAULT_OCR_DPI}）",
     )
+    parser.add_argument(
+        "--watermark",
+        dest="watermarks",
+        action="append",
+        default=None,
+        help="要從輸出 Markdown 移除的浮水印字串，可重複指定（預設讀取 style-decisions.json）",
+    )
+
+    sort_group = parser.add_mutually_exclusive_group()
+    sort_group.add_argument(
+        "--pymupdf-sort",
+        dest="pymupdf_sort_text",
+        action="store_true",
+        help="pymupdf 引擎依幾何位置排序文字（預設開啟，可用 style-decisions.json 覆蓋）",
+    )
+    sort_group.add_argument(
+        "--no-pymupdf-sort",
+        dest="pymupdf_sort_text",
+        action="store_false",
+        help="關閉 pymupdf 幾何排序，避免多欄或表單版面被交錯",
+    )
+    parser.set_defaults(pymupdf_sort_text=None)
 
     include_group = parser.add_mutually_exclusive_group()
     include_group.add_argument(
@@ -232,6 +280,46 @@ def extract_with_markitdown(source_path: Path, output_dir: Path) -> Path | None:
     return output_file
 
 
+def clean_watermarks(output_files: list[Path], watermarks: list[str]) -> None:
+    """從輸出 Markdown 移除指定的浮水印字串。"""
+    if not watermarks:
+        return
+    for output_file in output_files:
+        if not output_file.exists():
+            continue
+        original = output_file.read_text(encoding="utf-8")
+        cleaned = original
+        for watermark in watermarks:
+            cleaned = cleaned.replace(watermark, "")
+        if cleaned != original:
+            output_file.write_text(cleaned, encoding="utf-8")
+            print(f"✓ 已清除浮水印: {output_file}")
+
+
+def clean_opendataloader_temp_image_links(output_files: list[Path]) -> None:
+    """移除 opendataloader 逐頁暫存圖片連結；圖片由 manifest 重新插入。"""
+    pattern = re.compile(r"!\[[^\]]*\]\(page_\d+_images/[^)\s]+\)")
+    for output_file in output_files:
+        if not output_file.exists():
+            continue
+        original = output_file.read_text(encoding="utf-8")
+        cleaned = pattern.sub("", original)
+        if cleaned != original:
+            output_file.write_text(cleaned, encoding="utf-8")
+            print(f"✓ 已移除暫存圖片連結（由 manifest 重新插入）: {output_file}")
+
+
+def clean_artifact_headings(output_files: list[Path]) -> None:
+    """移除 opendataloader 產生的頁碼裝飾標題（純數字或空白標題）。"""
+    for output_file in output_files:
+        if not output_file.exists():
+            continue
+        original = output_file.read_text(encoding="utf-8")
+        cleaned = strip_artifact_headings(original)
+        if cleaned != original:
+            output_file.write_text(cleaned, encoding="utf-8")
+            print(f"✓ 已移除頁碼裝飾標題: {output_file}")
+
 
 def load_style_decisions(project_root: Path) -> dict:
     """讀取 style-decisions.json。"""
@@ -245,18 +333,15 @@ def load_style_decisions(project_root: Path) -> dict:
         return {}
 
 
-def load_document_extraction_settings(project_root: Path, pdf_stem: str) -> dict[str, str]:
+def load_document_extraction_settings(project_root: Path, pdf_stem: str) -> dict[str, object]:
     """讀取全域與每文件抽取設定。"""
     style_decisions = load_style_decisions(project_root)
     document_format = style_decisions.get("document_format", {})
     if not isinstance(document_format, dict):
         return {}
 
-    settings: dict[str, str] = {}
-    for key, normalizer in (
-        ("page_text_engine", normalize_page_text_engine),
-        ("layout_profile", normalize_layout_profile),
-    ):
+    settings: dict[str, object] = {}
+    for key, normalizer in DOCUMENT_FORMAT_FIELDS:
         normalized = normalizer(document_format.get(key))
         if normalized is not None:
             settings[key] = normalized
@@ -265,10 +350,7 @@ def load_document_extraction_settings(project_root: Path, pdf_stem: str) -> dict
     if isinstance(documents, dict):
         doc_settings = documents.get(pdf_stem, {})
         if isinstance(doc_settings, dict):
-            for key, normalizer in (
-                ("page_text_engine", normalize_page_text_engine),
-                ("layout_profile", normalize_layout_profile),
-            ):
+            for key, normalizer in DOCUMENT_FORMAT_FIELDS:
                 normalized = normalizer(doc_settings.get(key))
                 if normalized is not None:
                     settings[key] = normalized
@@ -281,15 +363,45 @@ def resolve_page_text_strategy(
     project_root: Path,
     requested_engine: str,
     requested_layout: str,
+    requested_pymupdf_sort_text: bool | None = None,
+    requested_watermarks: list[str] | None = None,
 ) -> dict[str, object]:
     """綜合 CLI、style-decisions 與自動偵測，決定分頁提取策略。"""
     source_type = detect_source_type(pdf_path)
+    settings = load_document_extraction_settings(project_root, pdf_path.stem)
+
+    pymupdf_sort_text = requested_pymupdf_sort_text
+    pymupdf_sort_text_source = "cli" if pymupdf_sort_text is not None else None
+    if pymupdf_sort_text is None:
+        style_sort = settings.get("pymupdf_sort_text")
+        if isinstance(style_sort, bool):
+            pymupdf_sort_text = style_sort
+            pymupdf_sort_text_source = "style-decisions"
+    if pymupdf_sort_text is None:
+        pymupdf_sort_text = True
+        pymupdf_sort_text_source = "default"
+
+    watermarks = requested_watermarks
+    watermarks_source = "cli" if watermarks is not None else None
+    if watermarks is None:
+        style_watermarks = settings.get("watermarks")
+        if isinstance(style_watermarks, list):
+            watermarks = style_watermarks
+            watermarks_source = "style-decisions"
+    if watermarks is None:
+        watermarks = []
+        watermarks_source = "default"
+
     if source_type in {"image", "image-dir"}:
         return {
             "page_text_engine": "ocr",
             "page_text_engine_source": "image-source",
             "layout_profile": "single-column",
             "layout_profile_source": "image-source",
+            "pymupdf_sort_text": pymupdf_sort_text,
+            "pymupdf_sort_text_source": pymupdf_sort_text_source,
+            "watermarks": watermarks,
+            "watermarks_source": watermarks_source,
             "document_settings": {},
             "detection": None,
             "quality_probe": None,
@@ -301,14 +413,15 @@ def resolve_page_text_strategy(
             "page_text_engine_source": "epub-default",
             "layout_profile": "single-column",
             "layout_profile_source": "epub-default",
+            "pymupdf_sort_text": pymupdf_sort_text,
+            "pymupdf_sort_text_source": pymupdf_sort_text_source,
+            "watermarks": watermarks,
+            "watermarks_source": watermarks_source,
             "document_settings": {},
             "detection": None,
             "quality_probe": None,
             "source_type": source_type,
         }
-
-    pdf_stem = pdf_path.stem
-    settings = load_document_extraction_settings(project_root, pdf_stem)
 
     page_text_engine = normalize_page_text_engine(requested_engine) or "auto"
     layout_profile = normalize_layout_profile(requested_layout) or "auto"
@@ -375,6 +488,10 @@ def resolve_page_text_strategy(
         "page_text_engine_source": engine_source or "default",
         "layout_profile": layout_profile,
         "layout_profile_source": layout_source or "default",
+        "pymupdf_sort_text": pymupdf_sort_text,
+        "pymupdf_sort_text_source": pymupdf_sort_text_source,
+        "watermarks": watermarks,
+        "watermarks_source": watermarks_source,
         "document_settings": settings,
         "detection": detection,
         "quality_probe": quality_probe,
@@ -387,6 +504,7 @@ def extract_with_pages(
     output_dir: Path,
     page_text_engine: str = "pymupdf",
     progress_every: int = 25,
+    pymupdf_sort_text: bool = True,
 ) -> Path | None:
     """提取含頁碼標記的內容，用於章節拆分。"""
     source_type = detect_source_type(pdf_path)
@@ -395,7 +513,7 @@ def extract_with_pages(
 
     if page_text_engine == "opendataloader":
         output_file = output_dir / f"{pdf_path.stem}_pages.md"
-        pages = opendataloader_convert_pages(pdf_path, progress_every=progress_every)
+        pages = opendataloader_convert_pages(pdf_path)
         if not pages:
             print("⚠️  opendataloader 提取失敗，跳過")
             return None
@@ -418,7 +536,7 @@ def extract_with_pages(
         with output_file.open("w", encoding="utf-8") as handle:
             if page_text_engine == "pymupdf":
                 for page_num, page in enumerate(doc, 1):
-                    page_text = extract_page_text_pymupdf(page)
+                    page_text = extract_page_text_pymupdf(page, sort=pymupdf_sort_text)
                     handle.write(f"\n\n<!-- PAGE {page_num} -->\n\n{page_text}")
                     if should_print_progress(page_num, total_pages, progress_every):
                         print(f"↻ 分頁提取進度（pymupdf）: {page_num}/{total_pages}")
@@ -658,6 +776,8 @@ def main():
         project_root,
         requested_engine=args.page_text_engine,
         requested_layout=args.layout_profile,
+        requested_pymupdf_sort_text=args.pymupdf_sort_text,
+        requested_watermarks=args.watermarks,
     )
 
     print(f"\n📄 處理: {source_path.name} ({source_type.upper()})")
@@ -669,6 +789,10 @@ def main():
         f"🧭 版面設定: {strategy['layout_profile']} "
         f"（來源: {strategy['layout_profile_source']}）"
     )
+    if not strategy["pymupdf_sort_text"]:
+        print(f"🧭 pymupdf 排序: 關閉（來源: {strategy['pymupdf_sort_text_source']}）")
+    if strategy["watermarks"]:
+        print(f"🧭 浮水印清除: {', '.join(strategy['watermarks'])}（來源: {strategy['watermarks_source']}）")
     if strategy["detection"] is not None:
         sampled_pages = [
             f"p.{result['page']}={result['layout_profile']}"
@@ -733,7 +857,18 @@ def main():
             source_path,
             output_dir,
             page_text_engine=strategy["page_text_engine"],
+            pymupdf_sort_text=strategy["pymupdf_sort_text"],
         )
+
+    output_stem = build_output_stem(source_path, source_type)
+    generated_markdown = [
+        output_dir / f"{output_stem}.md",
+        output_dir / f"{output_stem}_pages.md",
+    ]
+    clean_watermarks(generated_markdown, strategy["watermarks"])
+    if strategy["page_text_engine"] == "opendataloader":
+        clean_opendataloader_temp_image_links(generated_markdown)
+        clean_artifact_headings(generated_markdown)
 
     include_images = args.include_images
     if include_images is None:

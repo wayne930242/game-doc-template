@@ -181,6 +181,10 @@ def build_document_format_patch(args: argparse.Namespace) -> dict[str, Any]:
         entry["layout_profile"] = args.layout_profile
     if args.page_text_engine is not None:
         entry["page_text_engine"] = args.page_text_engine
+    if args.pymupdf_sort_text is not None:
+        entry["pymupdf_sort_text"] = args.pymupdf_sort_text
+    if args.watermarks:
+        entry["watermarks"] = args.watermarks
 
     aside_mapping = {
         name: value
@@ -370,6 +374,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_format.add_argument(
         "--page-text-engine",
         choices=("auto", "ocr", "pymupdf", "markitdown", "opendataloader"),
+    )
+    p_format.add_argument(
+        "--pymupdf-sort-text",
+        type=parse_bool,
+        help="pymupdf 引擎是否依幾何位置排序文字（true/false）",
+    )
+    p_format.add_argument(
+        "--watermark",
+        dest="watermarks",
+        action="append",
+        help="要從輸出 Markdown 移除的浮水印字串，可重複指定",
     )
     p_format.add_argument("--aside-note")
     p_format.add_argument("--aside-tip")

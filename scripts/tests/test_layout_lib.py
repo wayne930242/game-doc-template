@@ -5,6 +5,7 @@ import pytest
 from _layout_lib import (
     analyze_pymupdf_text_noise,
     classify_page_layout,
+    extract_page_text_pymupdf,
     sample_page_indices,
     MIN_QUALITY_PROBE_CHARS,
 )
@@ -152,6 +153,47 @@ class TestClassifyPageLayout:
         assert "layout_profile" in result
         assert "confidence" in result
         assert "classified_lines" in result
+
+
+# ---------------------------------------------------------------------------
+# extract_page_text_pymupdf
+# ---------------------------------------------------------------------------
+
+class _FakePage:
+    """Records the ``sort`` kwarg passed to ``get_text``."""
+
+    def __init__(self, text: str = "hello world"):
+        self.text = text
+        self.calls: list[dict] = []
+
+    def get_text(self, mode, sort=None):
+        self.calls.append({"mode": mode, "sort": sort})
+        return self.text
+
+
+class TestExtractPageTextPymupdf:
+    def test_default_sorts_true(self):
+        page = _FakePage()
+        extract_page_text_pymupdf(page)
+        assert page.calls[-1]["sort"] is True
+
+    def test_explicit_sort_false(self):
+        page = _FakePage()
+        extract_page_text_pymupdf(page, sort=False)
+        assert page.calls[-1]["sort"] is False
+
+    def test_strips_result(self):
+        page = _FakePage("  padded text  ")
+        assert extract_page_text_pymupdf(page) == "padded text"
+
+    def test_falls_back_when_sort_unsupported(self):
+        class NoSortPage:
+            def get_text(self, mode, sort=None):
+                if sort is not None:
+                    raise TypeError("unexpected keyword argument 'sort'")
+                return "fallback text"
+
+        assert extract_page_text_pymupdf(NoSortPage()) == "fallback text"
 
 
 # ---------------------------------------------------------------------------
