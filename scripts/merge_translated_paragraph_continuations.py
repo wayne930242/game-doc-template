@@ -30,7 +30,11 @@ from _markdown_utils import (
     find_paragraph_continuation_breaks,
     merge_paragraph_continuation_at,
 )
-from validate_translation_structure import StructureToken, align_equal_tokens, extract_structure
+from validate_translation_structure import (
+    build_alignment_windows,
+    extract_structure,
+    find_alignment_window,
+)
 
 MARKDOWN_SUFFIXES = {".md", ".mdx"}
 
@@ -52,38 +56,6 @@ def pair_files(source: Path, translation: Path) -> list[tuple[Path, Path]]:
     raise ValueError("source and translation must both be files, or both be directories")
 
 
-def _alignment_windows(
-    source_tokens: Sequence[StructureToken], draft_tokens: Sequence[StructureToken]
-) -> list[tuple[int, int | None, int, int | None]]:
-    """回傳依序排列的結構錨點區間，每項為 (來源下界, 來源上界, 譯文下界, 譯文上界)。
-
-    下界為含首行的下一行（1-based），上界為不含的下一個錨點所在行；最後一區間上界為
-    `None`，代表延伸到檔尾。錨點取自 `align_equal_tokens` 判定為形狀相同的結構標記
-    （標題、清單、表格等），一般段落文字不在其中。
-    """
-    aligned = align_equal_tokens(source_tokens, draft_tokens)
-    anchors: list[tuple[int, int]] = [(0, 0)] + [
-        (source_token.line, draft_token.line) for source_token, draft_token in aligned
-    ]
-    windows: list[tuple[int, int | None, int, int | None]] = []
-    for index, (source_lo, draft_lo) in enumerate(anchors):
-        if index + 1 < len(anchors):
-            source_hi, draft_hi = anchors[index + 1]
-        else:
-            source_hi, draft_hi = None, None
-        windows.append((source_lo + 1, source_hi, draft_lo + 1, draft_hi))
-    return windows
-
-
-def _find_window(
-    windows: list[tuple[int, int | None, int, int | None]], source_line: int
-) -> tuple[int, int | None, int, int | None] | None:
-    for source_lo, source_hi, draft_lo, draft_hi in windows:
-        if source_line >= source_lo and (source_hi is None or source_line < source_hi):
-            return source_lo, source_hi, draft_lo, draft_hi
-    return None
-
-
 def merge_one_pair(source_path: Path, translation_path: Path, *, dry_run: bool) -> dict[str, Any]:
     """對單一來源／譯文檔配對套用合併，回傳該檔案的處理結果。"""
     source_text = source_path.read_text(encoding="utf-8")
@@ -101,11 +73,11 @@ def merge_one_pair(source_path: Path, translation_path: Path, *, dry_run: bool) 
     translation_text = translation_path.read_text(encoding="utf-8")
     source_tokens = extract_structure(source_text)
     draft_tokens = extract_structure(translation_text)
-    windows = _alignment_windows(source_tokens, draft_tokens)
+    windows = build_alignment_windows(source_tokens, draft_tokens)
 
     target_draft_lines: list[int] = []
     for source_line in source_lines:
-        window = _find_window(windows, source_line)
+        window = find_alignment_window(windows, source_line)
         if window is None:
             result["unresolved"].append(source_line)
             continue

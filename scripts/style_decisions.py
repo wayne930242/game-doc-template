@@ -185,6 +185,8 @@ def build_document_format_patch(args: argparse.Namespace) -> dict[str, Any]:
         entry["pymupdf_sort_text"] = args.pymupdf_sort_text
     if args.watermarks:
         entry["watermarks"] = args.watermarks
+    if args.symbol_glyphs:
+        entry["symbol_glyphs"] = args.symbol_glyphs
 
     aside_mapping = {
         name: value
@@ -385,6 +387,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="watermarks",
         action="append",
         help="要從輸出 Markdown 移除的浮水印字串，可重複指定",
+    )
+    p_format.add_argument(
+        "--symbol-glyph",
+        dest="symbol_glyphs",
+        action="append",
+        help="視為裝飾性符號字型殘留（如 Wingdings 字元被輸出成原始控制字元）的字元，可重複指定",
     )
     p_format.add_argument("--aside-note")
     p_format.add_argument("--aside-tip")

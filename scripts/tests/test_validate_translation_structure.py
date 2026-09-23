@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+from validate_translation_structure import build_alignment_windows, extract_structure, find_alignment_window
+
 
 SCRIPT = Path(__file__).parents[1] / "validate_translation_structure.py"
 
@@ -280,3 +282,54 @@ def test_missing_input_returns_machine_readable_error(tmp_path):
     assert payload["valid"] is False
     assert payload["error"]["code"] == "file_not_found"
     assert str(missing) in payload["error"]["message"]
+
+
+# ---------------------------------------------------------------------------
+# build_alignment_windows / find_alignment_window
+#
+# Shared by tools that locate a specific source structural position inside an
+# already-translated draft (paragraph-continuation merges, symbol-glyph
+# ornament conversion), scoped by the same heading/list/table anchors the
+# structure validator itself treats as equal.
+# ---------------------------------------------------------------------------
+
+
+class TestBuildAlignmentWindows:
+    def test_windows_span_between_matching_headings(self):
+        source = "## Chapter\n\nfirst paragraph here.\n\n## Next Chapter\n\nlast paragraph here.\n"
+        draft = "## 章節\n\n第一段在此。\n\n## 下一章\n\n最後一段在此。\n"
+
+        windows = build_alignment_windows(extract_structure(source), extract_structure(draft))
+
+        assert windows == [(1, 1, 1, 1), (2, 5, 2, 5), (6, None, 6, None)]
+
+    def test_no_shared_structure_yields_a_single_open_window(self):
+        source = "just some prose.\n"
+        draft = "只是一些文字。\n"
+
+        windows = build_alignment_windows(extract_structure(source), extract_structure(draft))
+
+        assert windows == [(1, None, 1, None)]
+
+
+class TestFindAlignmentWindow:
+    def test_finds_the_window_containing_a_source_line(self):
+        source = "## Chapter\n\nfirst paragraph here.\n\n## Next Chapter\n\nlast paragraph here.\n"
+        draft = "## 章節\n\n第一段在此。\n\n## 下一章\n\n最後一段在此。\n"
+        windows = build_alignment_windows(extract_structure(source), extract_structure(draft))
+
+        assert find_alignment_window(windows, 3) == (2, 5, 2, 5)
+
+    def test_finds_the_final_open_ended_window(self):
+        source = "## Chapter\n\nfirst paragraph here.\n\n## Next Chapter\n\nlast paragraph here.\n"
+        draft = "## 章節\n\n第一段在此。\n\n## 下一章\n\n最後一段在此。\n"
+        windows = build_alignment_windows(extract_structure(source), extract_structure(draft))
+
+        assert find_alignment_window(windows, 7) == (6, None, 6, None)
+
+    def test_returns_none_for_a_line_on_an_anchor_itself(self):
+        source = "## Chapter\n\nfirst paragraph here.\n\n## Next Chapter\n\nlast paragraph here.\n"
+        draft = "## 章節\n\n第一段在此。\n\n## 下一章\n\n最後一段在此。\n"
+        windows = build_alignment_windows(extract_structure(source), extract_structure(draft))
+
+        assert find_alignment_window(windows, 1) is None

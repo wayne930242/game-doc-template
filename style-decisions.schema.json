@@ -113,6 +113,10 @@
           "type": "array",
           "items": { "type": "string" }
         },
+        "symbol_glyphs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "aside_mapping": {
           "type": "object",
           "additionalProperties": false,
@@ -217,6 +221,10 @@
         "page_text_engine": { "enum": ["auto", "ocr", "pymupdf", "markitdown", "opendataloader"] },
         "pymupdf_sort_text": { "type": "boolean" },
         "watermarks": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "symbol_glyphs": {
           "type": "array",
           "items": { "type": "string" }
         },

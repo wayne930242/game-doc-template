@@ -465,6 +465,42 @@ def align_equal_tokens(
     return pairs
 
 
+def build_alignment_windows(
+    source_tokens: Sequence[StructureToken], draft_tokens: Sequence[StructureToken]
+) -> list[tuple[int, int | None, int, int | None]]:
+    """回傳依序排列的結構錨點區間，每項為 (來源下界, 來源上界, 譯文下界, 譯文上界)。
+
+    下界為含首行的下一行（1-based），上界為不含的下一個錨點所在行；最後一區間上界為
+    `None`，代表延伸到檔尾。錨點取自 `align_equal_tokens` 判定為形狀相同的結構標記
+    （標題、清單、表格等），一般段落文字不在其中。
+
+    供需要在來源與已翻譯譯文之間，依結構錨點定位對應行號範圍的工具共用（例如合併已
+    誤斷的段落續句、轉換裝飾符號字元），避免各自重複實作同一套錨點區間邏輯。
+    """
+    aligned = align_equal_tokens(source_tokens, draft_tokens)
+    anchors: list[tuple[int, int]] = [(0, 0)] + [
+        (source_token.line, draft_token.line) for source_token, draft_token in aligned
+    ]
+    windows: list[tuple[int, int | None, int, int | None]] = []
+    for index, (source_lo, draft_lo) in enumerate(anchors):
+        if index + 1 < len(anchors):
+            source_hi, draft_hi = anchors[index + 1]
+        else:
+            source_hi, draft_hi = None, None
+        windows.append((source_lo + 1, source_hi, draft_lo + 1, draft_hi))
+    return windows
+
+
+def find_alignment_window(
+    windows: Sequence[tuple[int, int | None, int, int | None]], source_line: int
+) -> tuple[int, int | None, int, int | None] | None:
+    """回傳 `source_line`（1-based）所在的結構錨點區間，見 `build_alignment_windows`。"""
+    for source_lo, source_hi, draft_lo, draft_hi in windows:
+        if source_line >= source_lo and (source_hi is None or source_line < source_hi):
+            return source_lo, source_hi, draft_lo, draft_hi
+    return None
+
+
 def compare_structure(
     source_text: str,
     draft_text: str,

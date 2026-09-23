@@ -37,6 +37,7 @@ from _layout_lib import (
     probe_pymupdf_text_quality,
 )
 from _markdown_utils import (
+    clean_symbol_glyph_ornaments,
     merge_list_continuations,
     merge_paragraph_continuations,
     strip_artifact_headings,
@@ -132,11 +133,21 @@ def normalize_watermarks(value: object) -> list[str] | None:
     return list(value)
 
 
+def normalize_symbol_glyphs(value: object) -> list[str] | None:
+    """正規化視為裝飾性符號字型殘留字元的清單。"""
+    if not isinstance(value, list):
+        return None
+    if not all(isinstance(item, str) for item in value):
+        return None
+    return list(value)
+
+
 DOCUMENT_FORMAT_FIELDS = (
     ("page_text_engine", normalize_page_text_engine),
     ("layout_profile", normalize_layout_profile),
     ("pymupdf_sort_text", normalize_pymupdf_sort_text),
     ("watermarks", normalize_watermarks),
+    ("symbol_glyphs", normalize_symbol_glyphs),
 )
 
 
@@ -183,6 +194,14 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=None,
         help="要從輸出 Markdown 移除的浮水印字串，可重複指定（預設讀取 style-decisions.json）",
+    )
+    parser.add_argument(
+        "--symbol-glyph",
+        dest="symbol_glyphs",
+        action="append",
+        default=None,
+        help="視為裝飾性符號字型殘留（如 Wingdings 字元被輸出成原始控制字元）的字元，"
+        "可重複指定（預設讀取 style-decisions.json）",
     )
 
     sort_group = parser.add_mutually_exclusive_group()
@@ -352,6 +371,28 @@ def clean_paragraph_continuations(output_files: list[Path]) -> None:
             print(f"⚠️  疑似段落斷行續句但未自動合併，需人工確認（第 {lines_str} 行）: {output_file}")
 
 
+def clean_symbol_glyphs(output_files: list[Path], glyphs: list[str]) -> None:
+    """將裝飾性符號字型殘留字元（如 Wingdings 字元被輸出成原始控制字元）轉換為
+    結構化 Markdown（清單項目或小節標題）；`glyphs` 為空時略過。"""
+    if not glyphs:
+        return
+    for output_file in output_files:
+        if not output_file.exists():
+            continue
+        original = output_file.read_text(encoding="utf-8")
+        cleaned, counts = clean_symbol_glyph_ornaments(original, glyphs)
+        if cleaned != original:
+            output_file.write_text(cleaned, encoding="utf-8")
+            print(
+                f"✓ 已轉換裝飾符號殘留字元（清單項目 "
+                f"{counts['list_items_from_split'] + counts['list_items_from_singleton']}、"
+                f"標題 {counts['titles']}）: {output_file}"
+            )
+        if counts["ambiguous"]:
+            lines_str = "、".join(str(line) for line in counts["ambiguous"])
+            print(f"⚠️  疑似段落斷行續句但未自動合併，需人工確認（第 {lines_str} 行）: {output_file}")
+
+
 def load_style_decisions(project_root: Path) -> dict:
     """讀取 style-decisions.json。"""
     path = project_root / "style-decisions.json"
@@ -396,6 +437,7 @@ def resolve_page_text_strategy(
     requested_layout: str,
     requested_pymupdf_sort_text: bool | None = None,
     requested_watermarks: list[str] | None = None,
+    requested_symbol_glyphs: list[str] | None = None,
 ) -> dict[str, object]:
     """綜合 CLI、style-decisions 與自動偵測，決定分頁提取策略。"""
     source_type = detect_source_type(pdf_path)
@@ -423,6 +465,17 @@ def resolve_page_text_strategy(
         watermarks = []
         watermarks_source = "default"
 
+    symbol_glyphs = requested_symbol_glyphs
+    symbol_glyphs_source = "cli" if symbol_glyphs is not None else None
+    if symbol_glyphs is None:
+        style_symbol_glyphs = settings.get("symbol_glyphs")
+        if isinstance(style_symbol_glyphs, list):
+            symbol_glyphs = style_symbol_glyphs
+            symbol_glyphs_source = "style-decisions"
+    if symbol_glyphs is None:
+        symbol_glyphs = []
+        symbol_glyphs_source = "default"
+
     if source_type in {"image", "image-dir"}:
         return {
             "page_text_engine": "ocr",
@@ -433,6 +486,8 @@ def resolve_page_text_strategy(
             "pymupdf_sort_text_source": pymupdf_sort_text_source,
             "watermarks": watermarks,
             "watermarks_source": watermarks_source,
+            "symbol_glyphs": symbol_glyphs,
+            "symbol_glyphs_source": symbol_glyphs_source,
             "document_settings": {},
             "detection": None,
             "quality_probe": None,
@@ -448,6 +503,8 @@ def resolve_page_text_strategy(
             "pymupdf_sort_text_source": pymupdf_sort_text_source,
             "watermarks": watermarks,
             "watermarks_source": watermarks_source,
+            "symbol_glyphs": symbol_glyphs,
+            "symbol_glyphs_source": symbol_glyphs_source,
             "document_settings": {},
             "detection": None,
             "quality_probe": None,
@@ -523,6 +580,8 @@ def resolve_page_text_strategy(
         "pymupdf_sort_text_source": pymupdf_sort_text_source,
         "watermarks": watermarks,
         "watermarks_source": watermarks_source,
+        "symbol_glyphs": symbol_glyphs,
+        "symbol_glyphs_source": symbol_glyphs_source,
         "document_settings": settings,
         "detection": detection,
         "quality_probe": quality_probe,
@@ -809,6 +868,7 @@ def main():
         requested_layout=args.layout_profile,
         requested_pymupdf_sort_text=args.pymupdf_sort_text,
         requested_watermarks=args.watermarks,
+        requested_symbol_glyphs=args.symbol_glyphs,
     )
 
     print(f"\n📄 處理: {source_path.name} ({source_type.upper()})")
@@ -824,6 +884,11 @@ def main():
         print(f"🧭 pymupdf 排序: 關閉（來源: {strategy['pymupdf_sort_text_source']}）")
     if strategy["watermarks"]:
         print(f"🧭 浮水印清除: {', '.join(strategy['watermarks'])}（來源: {strategy['watermarks_source']}）")
+    if strategy["symbol_glyphs"]:
+        print(
+            f"🧭 裝飾符號殘留字元: {', '.join(repr(g) for g in strategy['symbol_glyphs'])}"
+            f"（來源: {strategy['symbol_glyphs_source']}）"
+        )
     if strategy["detection"] is not None:
         sampled_pages = [
             f"p.{result['page']}={result['layout_profile']}"
@@ -902,6 +967,7 @@ def main():
         clean_artifact_headings(generated_markdown)
         clean_list_continuations(generated_markdown)
         clean_paragraph_continuations(generated_markdown)
+        clean_symbol_glyphs(generated_markdown, strategy["symbol_glyphs"])
 
     include_images = args.include_images
     if include_images is None:

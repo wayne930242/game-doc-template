@@ -50,6 +50,7 @@ def test_cmd_set_document_format_for_document(tmp_path):
         page_text_engine="markitdown",
         pymupdf_sort_text=None,
         watermarks=None,
+        symbol_glyphs=None,
         aside_note=None,
         aside_tip=None,
         aside_caution=None,
