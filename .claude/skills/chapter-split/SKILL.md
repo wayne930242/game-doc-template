@@ -150,46 +150,15 @@ Return the finalized chapter map and generated docs to the caller:
 - `init-doc` should continue with progress tracker creation and final gate
 - manual invocations: if `translation_mode.mode == "bilingual"`, next skill is `/bilingual-translate`; otherwise continue to `/translate` or `/super-translate`
 
-## Prompt Templates
+## Work Units
 
-Prompt templates are colocated with this skill:
-- `./split-topology-planner-prompt.md`
-- `./split-planner-prompt.md`
-- `./split-wordcount-planner-prompt.md`
+Each planner is one delegated work unit, dispatched in pipeline order. Its brief is colocated with this skill:
 
-## Dispatch Templates
-
-Use these fixed dispatch patterns:
-
-### topology-planner
-
-```text
-Task tool (general-purpose):
-  description: "Plan topology for <SOURCE_PAGES_FILE>"
-  prompt template: ./split-topology-planner-prompt.md
-  placeholders:
-    <SOURCE_PAGES_FILE>, <CURRENT_CHAPTERS_JSON>, <DOCS_TREE_SUMMARY>, <DRAFT_TOPOLOGY_PATH>
-```
-
-### toc-planner
-
-```text
-Task tool (general-purpose):
-  description: "Draft TOC-based split config for <SOURCE_PAGES_FILE>"
-  prompt template: ./split-planner-prompt.md
-  placeholders:
-    <SOURCE_PAGES_FILE>, <DRAFT_CONFIG_PATH>
-```
-
-### wordcount-planner
-
-```text
-Task tool (general-purpose):
-  description: "Rebalance split config by wordcount for <SOURCE_PAGES_FILE>"
-  prompt template: ./split-wordcount-planner-prompt.md
-  placeholders:
-    <SOURCE_PAGES_FILE>, <DRAFT_CONFIG_PATH>
-```
+| Unit | Brief | Placeholders |
+| --- | --- | --- |
+| topology-planner | `./split-topology-planner-prompt.md` | `<SOURCE_PAGES_FILE>`, `<CURRENT_CHAPTERS_JSON>`, `<DOCS_TREE_SUMMARY>`, `<DRAFT_TOPOLOGY_PATH>` |
+| toc-planner | `./split-planner-prompt.md` | `<SOURCE_PAGES_FILE>`, `<DRAFT_CONFIG_PATH>` |
+| wordcount-planner | `./split-wordcount-planner-prompt.md` | `<SOURCE_PAGES_FILE>`, `<DRAFT_CONFIG_PATH>` |
 
 ## Progress Sync Contract (Required)
 

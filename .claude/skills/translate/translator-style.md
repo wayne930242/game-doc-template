@@ -19,5 +19,4 @@ Shared by `translate` and `bilingual-translate`. The deprecated `super-translate
 
 - `translate` Step 3 translator prompt and Step 5 semantic review
 - `super-translate` through its compatibility forward to `translate`
-- `bilingual-translate` Step 4 point 3 (placeholder filling) and point 5 (self-review checklist) — applies to the Chinese half of each block only; the English blockquote line stays byte-for-byte untouched regardless
-- Codex-routed drafts (`codex-tier.md` §3): inline these rules into the Codex prompt exactly like any other hard constraint — draft origin does not change which voice applies
+- `bilingual-translate` [`filler-prompt.md`](../bilingual-translate/filler-prompt.md) placeholder filling and self-review — applies to the Chinese half of each block only; the English blockquote line stays byte-for-byte untouched regardless

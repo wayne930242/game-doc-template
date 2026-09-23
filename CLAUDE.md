@@ -23,10 +23,10 @@ Convert PDF game rulebooks into a Traditional Chinese Markdown documentation sit
 - When task relates to documentation formatting or translation style, apply established project conventions
 - MUST maintain consistency with existing patterns
 
-**Law 4: Parallel Processing**
+**Law 4: Delegation through Straw Boss**
 
-- MUST use Task tool for independent operations
-- Batch file searches and reads with agents
+- Skills define delegated work units: the brief, frozen inputs, exclusive write path, and fan-in step
+- The main coordinator dispatches work units through Straw Boss (`boss-say`) and chooses each worker's coordination graph, execution tier, provider, model, and effort
 
 **Law 5: Reflexive Learning**
 
@@ -109,7 +109,7 @@ Convert PDF game rulebooks into a Traditional Chinese Markdown documentation sit
 2. Use `init-doc` skill to complete setup, extraction, terminology, and context, then automatically route to the selected full translation skill after its gate passes
 3. Use `chapter-split` skill when extracted Markdown needs deterministic chapter/file structuring or re-splitting
 4. Use `term-decision` skill to handle terminology decisions and batch replacements
-5. `init-doc` normally enters `translate all` or `bilingual-translate all`; invoke those skills directly only for focused work or resume. Draft waves use at most three isolated lower-cost workers, followed by ordered writeback and `progress: X/Y` commits
+5. `init-doc` normally enters `translate all` or `bilingual-translate all`; invoke those skills directly only for focused work or resume. Draft waves hold at most three chapters as isolated work units, followed by ordered writeback and `progress: X/Y` commits
 6. Use `fix-ref` skill to replace printed page references with internal links
 7. Use `check-consistency` skill to validate terminology and style consistency
 8. Use `check-completeness` skill to check rule content completeness

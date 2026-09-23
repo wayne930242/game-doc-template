@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -8,7 +9,12 @@ TRANSLATE = ROOT / ".claude/skills/translate/SKILL.md"
 SUPER = ROOT / ".claude/skills/super-translate/SKILL.md"
 BILINGUAL = ROOT / ".claude/skills/bilingual-translate/SKILL.md"
 INIT_DOC = ROOT / ".claude/skills/init-doc/SKILL.md"
-CODEX_TIER = ROOT / ".claude/skills/translate/codex-tier.md"
+SKILLS = ROOT / ".claude/skills"
+AGENT_SYSTEM = [ROOT / "CLAUDE.md", *sorted(SKILLS.rglob("*.md")), *sorted(SKILLS.rglob("*.yaml"))]
+PROVIDER_ASSIGNMENT = re.compile(
+    r"\b(haiku|sonnet|opus|codex|gpt-[\w.]+|lower-cost|Task tool|Agent tool)\b|\bmodel:",
+    re.IGNORECASE,
+)
 
 
 def test_translate_documents_unattended_order_and_bounded_review() -> None:
@@ -65,16 +71,29 @@ def test_init_doc_routes_to_translation_only_after_the_final_gate() -> None:
     assert "close automatic translation dispatch only after the downstream translation skill returns" in text
 
 
-def test_translation_skills_use_isolated_three_worker_draft_waves() -> None:
+def test_translation_skills_use_isolated_three_chapter_draft_waves() -> None:
     translate = TRANSLATE.read_text(encoding="utf-8")
     bilingual = BILINGUAL.read_text(encoding="utf-8")
-    codex_tier = CODEX_TIER.read_text(encoding="utf-8")
 
     for text in (translate, bilingual):
-        assert "maximum of 3 lower-cost draft workers" in text
+        assert "at most three" in text
+        assert "one draft work unit" in text
         assert "Register every draft path sequentially before dispatch" in text
+        assert "the wave's draft units as one fan-out" in text
         assert "write back in chapter order" in text
         assert "must not modify glossary" in text
-    assert "gpt-5.6-luna" in codex_tier
-    assert "Claude Agent fallback uses `sonnet`" in codex_tier
-    assert "Never run more than 3 draft workers concurrently" in codex_tier
+    assert (SKILLS / "bilingual-translate/filler-prompt.md").exists()
+
+
+def test_agent_system_leaves_worker_setup_to_the_main_coordinator() -> None:
+    claude = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+
+    assert "The main coordinator dispatches work units through Straw Boss" in claude
+    assert not (SKILLS / "translate/codex-tier.md").exists()
+    hits = [
+        f"{path.relative_to(ROOT)}:{number}: {line.strip()}"
+        for path in AGENT_SYSTEM
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if PROVIDER_ASSIGNMENT.search(line)
+    ]
+    assert hits == []

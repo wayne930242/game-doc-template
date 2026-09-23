@@ -112,18 +112,13 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 ### 使用原則
 
 - 建議流程：`new-project` → `init-doc`。`init-doc` 通過初始化守門檢查後，會依翻譯模式自動進入 `translate all` 或 `bilingual-translate all`；若來源更新或要重切章，插入 `chapter-split`。完整步驟見下方[本專案工作流程](#本專案工作流程簡版)。
-- `translate` 先讀全文並保存全書／各章摘要，再以每波最多 3 個較低成本的草稿 subagent 並行翻譯。每章以程式檢查 Markdown 結構，並進行一次語義審查；只有失敗時才定向修訂與必要複審。全書完成後會重建最終導覽、建置網站並驗證搜尋索引。
+- `translate` 先讀全文並保存全書／各章摘要，再以每波最多 3 章的獨立草稿工作單元並行翻譯。每章以程式檢查 Markdown 結構，並進行一次語義審查；只有失敗時才定向修訂與必要複審。全書完成後會重建最終導覽、建置網站並驗證搜尋索引。
 - `translate`、`bilingual-translate` 都會在每個 batch 完成後自動建立一個簡短進度 commit（格式：`progress: X/Y`）。舊的 `super-translate` 指令暫時保留，但會轉交新的 `translate` 流程。
 - 翻譯前先確認術語（`glossary.json`），交付前執行一致性與完整性檢查
 
-### 翻譯草稿模型分層（Codex，選用）
+### 派工（Straw Boss）
 
-`translate`、`bilingual-translate` 可將草稿生成這一步（最耗 token 的步驟）交給本機 Codex CLI 執行（`gpt-5.6-luna`、low effort），每波最多並行 3 章；未使用 Codex 時改由 Claude Agent `sonnet` subagent 執行草稿。較強的執行環境保留給語義審查、歧義與收斂工作。
-
-- 每個專案第一次執行任一翻譯 skill 時會詢問一次是否啟用，答案存在 `style-decisions.json`，之後不再詢問；不想用 Codex 的人選「否」即可，不影響其他功能。
-- 啟用後才會偵測 Codex 是否可用；沒裝且本機有 npm 時才會問要不要安裝，拒絕的話也只問一次。
-- Codex 產生的草稿與本機產生的草稿使用相同守門條件：程式化 Markdown 結構檢查與一次語義審查。Codex 失敗會靜默退回目前的執行環境自行產生草稿，不會中斷整批次。
-- 完整運作方式見 `.claude/skills/translate/codex-tier.md`。
+草稿、審查與章節規劃等可委派的工作單元，由主協調者透過 [Straw Boss](https://github.com/wayne930242/straw-boss) 的 `boss-say` 派工，並由主協調者決定每個 worker 的 provider、模型與 effort。skills 只定義 brief、凍結輸入、獨佔寫入路徑與整合步驟，不指定模型。
 
 ### 常用指令對照
 

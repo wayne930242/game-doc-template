@@ -8,9 +8,8 @@ Warns (never blocks) when a just-written-back translation file contains:
   skipped heading levels) that an LLM reviewer pass can miss — confirmed in
   practice: a broken bold marker once survived a full reviewer+refiner pass.
 
-Backstops Codex-authored drafts (routed via `codex exec`, which bypasses
-Claude's Write/Edit tools) as well as Claude-authored ones, since both flow
-through `draft.py ... writeback` before landing in published docs content.
+Backstops every delegated draft, whichever worker wrote it, since all drafts
+flow through `draft.py ... writeback` before landing in published docs content.
 
 Advisory only: every check here can false-positive (a forbidden variant
 inside a code block or proper noun; a legitimate `***bold italic***`; a

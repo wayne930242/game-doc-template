@@ -6,8 +6,6 @@ user-invocable: true
 
 # Bilingual Translate
 
-> 模型建議：本技能為主執行緒流程，依成本路由決策建議於 **sonnet** 會話執行；高階模型會話亦可執行，但屬超規格花費。
-
 ## Overview
 
 Single-pass bilingual translation. Produces documents where each Chinese paragraph is followed by the English original as a blockquote.
@@ -50,9 +48,7 @@ If a task-tracking tool is available in this session, mirror per-file progress i
 
 3. Do not pause for scope confirmation when invoked with `all` or from `init-doc`; continue across waves automatically.
 
-4. Resolve the project's Codex draft-tiering preference per `../translate/codex-tier.md` §1 (asked once per project, then silent).
-
-**Verification:** Target scope is resolved; all required files and mode settings present; Codex tiering preference resolved.
+**Verification:** Target scope is resolved; all required files and mode settings present.
 
 ### Step 2: Terminology Preflight (Fail-Closed)
 
@@ -67,7 +63,7 @@ If preflight fails, stop and fix terminology first.
 
 ### Step 3: Prepare an Isolated Bilingual Draft Wave
 
-Select a maximum of 3 lower-cost draft workers per wave. For each target file, determine the source English markdown path from `data/markdown/` (the `_pages.md` source referenced in `chapters.json`).
+Select at most three files per wave. Each file is one draft work unit. For each target file, determine the source English markdown path from `data/markdown/` (the `_pages.md` source referenced in `chapters.json`).
 
 Determine the output path: `docs/src/content/docs/bilingual/<section>/<file>.md` (from `chapters.json` + `mode=bilingual`).
 
@@ -81,31 +77,20 @@ uv run python scripts/bilingual_prep.py <SOURCE_FILE> <DRAFT_FILE>
 
 ### Step 4: Translate the Wave
 
-Freeze each file's glossary/style/source input, then dispatch up to three draft workers concurrently. Each worker may edit only its assigned bilingual draft and must not modify glossary, context, progress, source, navigation, or another draft. For each target file:
+Freeze each file's glossary/style input, then dispatch the wave's draft units as one fan-out, each briefed with [`filler-prompt.md`](./filler-prompt.md). Each unit may edit only its assigned bilingual draft and must not modify glossary, context, progress, source, navigation, or another draft. If using task tracking, mark each item `in_progress` at dispatch.
 
-1. If using task tracking, mark the item `in_progress`
-2. Read draft, `glossary.json`, and `style-decisions.json`
-3. For each `<!-- TODO: 翻譯 -->` placeholder: replace it with the Chinese translation of the English text in the immediately following blockquote line(s), following `../translate/translator-style.md` for register, proper-noun policy, POV, terminology glossing, and sentence structure.
+After every unit returns, write back in chapter order. For each file:
 
-   If Codex tiering is enabled and available (`../translate/codex-tier.md` §2), delegate this placeholder-filling to Codex per `../translate/codex-tier.md` §3 — the prompt MUST state that only `<!-- TODO: 翻譯 -->` placeholders may be replaced and every line starting with `>` must be left byte-for-byte untouched. On any Codex failure, use the per-chapter Claude Agent `sonnet` fallback in `../translate/codex-tier.md` §5.
-4. Update frontmatter `title` to Traditional Chinese; add `bilingual: true` if not present
-5. Single-pass self-review — unconditional and identical whether Codex or you filled the placeholders:
-   - Any `<!-- TODO: 翻譯 -->` left untranslated?
-   - Glossary violations?
-   - Full-width punctuation correct in Chinese text?
-   - English blockquote lines (starting with `>`) preserved exactly — no modifications?
-   - Content contamination (paragraphs with no source)?
-   - Native Chinese quality: any sentence that keeps English clause order/structure instead of natural Chinese syntax? Any 四字成語 or literary flourish that isn't grounded in the source's meaning? Any technical term translated where `glossary.json` or `style-decisions.json` says to keep the original English form?
-6. After every worker returns, write back in chapter order to `docs/src/content/docs/bilingual/<path>`
-7. Update progress:
+1. Write back to `docs/src/content/docs/bilingual/<path>`
+2. Update progress:
    ```bash
    uv run python scripts/progress_edit.py --progress-file data/translation-progress-bilingual.json --file <TARGET_FILE> --status completed
    ```
-8. If using task tracking, mark the item completed
+3. If using task tracking, mark the item completed
 
-One worker failure falls back only that chapter per `../translate/codex-tier.md`; successful siblings continue. Reduce later waves after repeated resource/rate-limit failures. Group shared terminology ambiguities at the wave boundary and revalidate affected drafts before writeback.
+A failed draft unit affects only its chapter; successful siblings continue. Group shared terminology ambiguities at the wave boundary and revalidate affected drafts before writeback.
 
-**Verification:** Self-review checklist passes; output file written; progress JSON updated.
+**Verification:** Every unit reports `self_review_pass: true`; output file written; progress JSON updated.
 
 ### Step 5: Batch Checkpoint Commit
 
@@ -157,7 +142,6 @@ Require zero exit before reporting the bilingual book/site complete. Partial sco
 | "translation-progress-bilingual.json doesn't exist, skip tracking" | Create it with `progress_edit.py --create-if-missing`. |
 | "One file done, no need for checkpoint" | Every completed batch gets a commit. |
 | "Skip terminology preflight, it was fine last time" | Glossary changes between runs. Always preflight. |
-| "Codex filled this, skip the self-review" | Review is unconditional regardless of who/what filled the placeholders. |
 
 ## When to Stop and Ask for Help
 

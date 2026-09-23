@@ -42,8 +42,6 @@ Select `in_progress` before `not_started`, preserving chapter order within each 
 uv run python scripts/progress_read.py --next 3 --json
 ```
 
-Resolve the optional Codex draft tier once per project using [`codex-tier.md`](./codex-tier.md). This provider preference does not change the translation or review contract.
-
 **Complete when:** scope is known, required project state exists, and no user confirmation is pending.
 
 ### 2. Prepare or reuse whole-book context
@@ -98,14 +96,14 @@ uv run python scripts/term_read.py --fail-on-missing --fail-on-forbidden
 
 ### 3. Build a bounded wave of complete chapter drafts
 
-Select at most three ready chapters. A normal wave uses a maximum of 3 lower-cost draft workers.
+Select at most three ready chapters per wave. Each chapter is one draft work unit.
 
 Register every draft path sequentially before dispatch:
 
 1. In chapter order, mark each wave entry `in_progress`.
 2. In the same order, register and obtain every draft path through `draft.py`; do not construct draft paths manually.
 3. Freeze each worker's inputs: current full source chapter, reusable context, glossary subset, style decisions, and translator style.
-4. Dispatch all wave draft workers concurrently using [`translator-prompt.md`](./translator-prompt.md) and the provider policy in [`codex-tier.md`](./codex-tier.md).
+4. Dispatch the wave's draft units as one fan-out, each briefed with [`translator-prompt.md`](./translator-prompt.md).
 5. Collect every result before mutating shared state. A worker may write only its exclusive registered draft and must not modify glossary, context, progress, source chapters, navigation, or the draft manifest.
 
 ```bash
@@ -121,7 +119,7 @@ Delegated work receives absolute project, target, and draft paths. The translato
 - applicable glossary entries;
 - style decisions and [`translator-style.md`](./translator-style.md).
 
-If one worker fails, retry or fall back for that chapter without cancelling successful siblings. Reduce the next wave below three after repeated resource/rate-limit failures. A chapter-local ambiguity blocks only that chapter; group any shared-term questions at the wave boundary before validating affected drafts.
+A failed draft unit affects only its chapter; successful siblings continue. A chapter-local ambiguity blocks only that chapter; group any shared-term questions at the wave boundary before validating affected drafts.
 
 **Complete when:** every successful worker has an isolated complete chapter draft, and failures/ambiguities are attached only to affected entries.
 
@@ -203,7 +201,7 @@ This command regenerates the final homepage and sidebar navigation, rechecks glo
 
 ## Automatic continuation and stop conditions
 
-Continue without interaction through three-worker draft waves, passing chapters, deterministic repairs, ordered progress/writeback, navigation regeneration, and the final website handoff when all chapters complete.
+Continue without interaction through three-chapter draft waves, passing chapters, deterministic repairs, ordered progress/writeback, navigation regeneration, and the final website handoff when all chapters complete.
 
 Stop or ask only for:
 
@@ -226,4 +224,3 @@ Stop or ask only for:
 - [`semantic-reviewer-prompt.md`](./semantic-reviewer-prompt.md)
 - [`targeted-refiner-prompt.md`](./targeted-refiner-prompt.md)
 - [`translator-style.md`](./translator-style.md)
-- [`codex-tier.md`](./codex-tier.md)
