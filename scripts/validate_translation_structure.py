@@ -188,6 +188,23 @@ def _is_table_start(lines: Sequence[str], index: int) -> bool:
     )
 
 
+def _is_blank_placeholder_table(column_counts: Sequence[list[str]]) -> bool:
+    """True for a header+separator-only, single empty-cell table (e.g. `| |` / `|---|`).
+
+    PDF card-border boxes with no legible text extract as this exact shape; it
+    carries zero content on either side of a translation, so requiring it to
+    match structurally between source and draft only produces noise that can
+    also confuse `SequenceMatcher` into pairing a real heading with one of these
+    interchangeable blanks. A genuine table always has at least one data row
+    after the header/separator, or more than one column.
+    """
+    return (
+        len(column_counts) == 2
+        and all(len(cells) == 1 for cells in column_counts)
+        and not column_counts[0][0]
+    )
+
+
 def _image_tokens(line: str, line_number: int) -> list[StructureToken]:
     tokens: list[StructureToken] = []
     for match in MARKDOWN_IMAGE_RE.finditer(line):
@@ -371,14 +388,15 @@ def extract_structure(text: str) -> list[StructureToken]:
                 table_lines.append(lines[end_index])
                 end_index += 1
             column_counts = [_split_table_row(row) for row in table_lines]
-            tokens.append(
-                StructureToken.create(
-                    "table",
-                    line_number,
-                    rows=len(table_lines),
-                    columns=[len(cells) for cells in column_counts],
+            if not _is_blank_placeholder_table(column_counts):
+                tokens.append(
+                    StructureToken.create(
+                        "table",
+                        line_number,
+                        rows=len(table_lines),
+                        columns=[len(cells) for cells in column_counts],
+                    )
                 )
-            )
             for offset, table_line in enumerate(table_lines):
                 tokens.extend(_image_tokens(table_line, line_number + offset))
             index = end_index
@@ -444,17 +462,36 @@ def _finding(
     }
 
 
+def _anchor_key(token: StructureToken, *, heading_level_sensitive: bool) -> str:
+    """回傳供錨點比對用的簽章；`heading_level_sensitive=False` 時，標題只比對種類、
+    忽略層級，讓譯者既有、層級與來源不同的標題仍可當作錨點（見 `align_equal_tokens`）。"""
+    if not heading_level_sensitive and token.kind == "heading":
+        return json.dumps({"kind": "heading"}, ensure_ascii=False, sort_keys=True)
+    return token.signature()
+
+
 def align_equal_tokens(
-    source_tokens: Sequence[StructureToken], draft_tokens: Sequence[StructureToken]
+    source_tokens: Sequence[StructureToken],
+    draft_tokens: Sequence[StructureToken],
+    *,
+    heading_level_sensitive: bool = True,
 ) -> list[tuple[StructureToken, StructureToken]]:
     """Return source/draft token pairs the structure matcher treats as equal (same shape, same order).
 
     Reused by tooling that needs to locate a specific source structural position inside an
     already-translated draft, without re-implementing the shape-based sequence alignment.
+
+    `heading_level_sensitive=False` treats any pair of headings (regardless of level) as an
+    anchor. Callers that only need a reliable position (not a validity check) — the paragraph-
+    continuation and symbol-glyph sync tools — should pass this, because a translator's own,
+    already-committed heading may use a different level than the source's raw extraction level
+    without that being wrong; requiring an exact level match there just shatters anchor coverage
+    into large gaps. The structure gate itself (`compare_structure`) never calls this function and
+    is unaffected: it still flags every heading-level difference.
     """
     matcher = SequenceMatcher(
-        a=[token.signature() for token in source_tokens],
-        b=[token.signature() for token in draft_tokens],
+        a=[_anchor_key(token, heading_level_sensitive=heading_level_sensitive) for token in source_tokens],
+        b=[_anchor_key(token, heading_level_sensitive=heading_level_sensitive) for token in draft_tokens],
         autojunk=False,
     )
     pairs: list[tuple[StructureToken, StructureToken]] = []
@@ -466,18 +503,24 @@ def align_equal_tokens(
 
 
 def build_alignment_windows(
-    source_tokens: Sequence[StructureToken], draft_tokens: Sequence[StructureToken]
+    source_tokens: Sequence[StructureToken],
+    draft_tokens: Sequence[StructureToken],
+    *,
+    heading_level_sensitive: bool = True,
 ) -> list[tuple[int, int | None, int, int | None]]:
     """回傳依序排列的結構錨點區間，每項為 (來源下界, 來源上界, 譯文下界, 譯文上界)。
 
     下界為含首行的下一行（1-based），上界為不含的下一個錨點所在行；最後一區間上界為
     `None`，代表延伸到檔尾。錨點取自 `align_equal_tokens` 判定為形狀相同的結構標記
-    （標題、清單、表格等），一般段落文字不在其中。
+    （標題、清單、表格等），一般段落文字不在其中。`heading_level_sensitive` 轉呼叫
+    `align_equal_tokens`，見其說明。
 
     供需要在來源與已翻譯譯文之間，依結構錨點定位對應行號範圍的工具共用（例如合併已
     誤斷的段落續句、轉換裝飾符號字元），避免各自重複實作同一套錨點區間邏輯。
     """
-    aligned = align_equal_tokens(source_tokens, draft_tokens)
+    aligned = align_equal_tokens(
+        source_tokens, draft_tokens, heading_level_sensitive=heading_level_sensitive
+    )
     anchors: list[tuple[int, int]] = [(0, 0)] + [
         (source_token.line, draft_token.line) for source_token, draft_token in aligned
     ]
@@ -499,6 +542,60 @@ def find_alignment_window(
         if source_line >= source_lo and (source_hi is None or source_line < source_hi):
             return source_lo, source_hi, draft_lo, draft_hi
     return None
+
+
+def realign_heading_levels(
+    source_tokens: Sequence[StructureToken],
+    draft_tokens: Sequence[StructureToken],
+    draft_text: str,
+) -> tuple[str, int]:
+    """把譯文中的標題層級改成與來源一致（只改 `#` 數量，不動標題文字），讓標題層級一律
+    以來源為準，不論這個標題是裝飾符號轉換產生，還是譯者原本就有的一般標題——兩者用
+    同一條規則決定層級，避免各自獨立推算而分歧。回傳更新後的譯文與改動筆數。
+
+    標題本身不能拿來當錨點：同一份文件裡常有多個標題共用同樣的種類特徵（例如同一物種
+    的多張卡片標題重複出現），若把「任意標題」都視為可互相配對的錨點，一旦譯文缺少某個
+    標題，`SequenceMatcher` 可能把來源的某個標題誤配到譯文中位置錯誤、但層級剛好不同
+    的另一個標題，把原本正確的層級改錯。因此改用非標題結構標記（圖片、清單、表格，兩側
+    須完全同形）先切出可信區間，再只在每個區間內、雙方標題數量剛好相同時，依序配對；
+    數量不同（例如譯文遺漏或多出標題）就不動，留給人工確認，不用猜的。
+
+    供 `convert_translated_symbol_glyphs.py` 在完成裝飾符號標題轉換之後，對整份文件套用
+    同一套「層級以來源為準」規則。
+    """
+    non_heading_source = [token for token in source_tokens if token.kind != "heading"]
+    non_heading_draft = [token for token in draft_tokens if token.kind != "heading"]
+    windows = build_alignment_windows(non_heading_source, non_heading_draft)
+
+    lines = draft_text.split("\n")
+    count = 0
+    for source_lo, source_hi, draft_lo, draft_hi in windows:
+        source_headings = [
+            token
+            for token in source_tokens
+            if token.kind == "heading"
+            and token.line >= source_lo
+            and (source_hi is None or token.line < source_hi)
+        ]
+        draft_headings = [
+            token
+            for token in draft_tokens
+            if token.kind == "heading"
+            and token.line >= draft_lo
+            and (draft_hi is None or token.line < draft_hi)
+        ]
+        if len(source_headings) != len(draft_headings):
+            continue
+        for source_token, draft_token in zip(source_headings, draft_headings):
+            source_level = dict(source_token.detail)["level"]
+            draft_level = dict(draft_token.detail)["level"]
+            if source_level == draft_level:
+                continue
+            line_index = draft_token.line - 1
+            stripped = lines[line_index].lstrip("#")
+            lines[line_index] = "#" * source_level + stripped
+            count += 1
+    return "\n".join(lines), count
 
 
 def compare_structure(

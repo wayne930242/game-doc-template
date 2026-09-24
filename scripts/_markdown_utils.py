@@ -14,7 +14,7 @@ from urllib.parse import unquote
 LINKED_MARKDOWN_IMAGE_RE = re.compile(r"\[!\[[^\]]*]\([^)]+\)]\([^)]+\)")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*]\([^)]+\)")
 MARKDOWN_HEADING_RE = re.compile(r"^#{1,3}\s+\S")
-ARTIFACT_HEADING_RE = re.compile(r"^#{1,6}[ \t]*\d*[ \t]*$", re.MULTILINE)
+ARTIFACT_HEADING_RE = re.compile(r"^#{1,6}[ \t]*(?:\d*|[A-Za-z])[ \t]*$", re.MULTILINE)
 LIST_ITEM_MARKER_RE = re.compile(r"^[ \t]*(?:[-+*]|\d+[.)])[ \t]+")
 BLOCK_HEADING_RE = re.compile(r"^#{1,6}(?:[ \t]|$)")
 _TERMINAL_PUNCTUATION = ".!?"
@@ -51,10 +51,11 @@ def extract_markdown_image_targets(text: str) -> list[str]:
 
 
 def strip_artifact_headings(text: str) -> str:
-    """移除純數字或空白的 Markdown 標題（頁碼裝飾產物，與語言無關）。
+    """移除純數字、空白，或單一字母的 Markdown 標題（頁碼裝飾產物，與語言無關）。
 
-    OpenDataLoader 等來源可能把頁面折角頁碼或裝飾線渲染成獨立標題
-    （如 ``# 33``、``##``），這類標題不含實質內容，可安全移除。
+    OpenDataLoader 等來源可能把頁面折角頁碼、裝飾線，或版面雜訊（如單一字母的
+    首字放大裝飾）渲染成獨立標題（如 ``# 33``、``##``、``###### a``），這類標題
+    不含實質內容，可安全移除；兩個以上字母的標題一律視為真實標題保留。
     此規則不涉及語言，翻譯後的 Markdown 也適用。
     """
     cleaned = ARTIFACT_HEADING_RE.sub("", text)
@@ -645,7 +646,11 @@ def find_symbol_glyph_block_decisions(
 
 
 def apply_glyph_decision_at(
-    text: str, block_start_line: int, kind: str, glyphs: Sequence[str]
+    text: str,
+    block_start_line: int,
+    kind: str,
+    glyphs: Sequence[str],
+    level: int | None = None,
 ) -> tuple[str, int]:
     """對起始於 `block_start_line`（1-based）的區塊套用 `kind`
     （`"title"` / `"list_singleton"` / `"list_split"` / `"drop"`，見
@@ -656,8 +661,12 @@ def apply_glyph_decision_at(
     重新掃描該區塊自身的符號出現位置與次數，不假設與決策來源（通常是英文原文）相同
     次數；若區塊實際形狀與 `kind` 不符（例如來源判定為單一符號標題，但這個區塊本身
     有兩次以上符號，或反之），則不套用，回傳項目數 0，呼叫端應視為無法對齊。
-    標題層級依這段文字自身前面最近一個標題的層級往下推算一層（上限六層；找不到則
-    預設層級二），與語言無關，因此可直接用於已翻譯文字。
+
+    `kind == "title"` 時的標題層級：若呼叫端傳入 `level`（來源側 `_GlyphBlockDecision.level`
+    已算好的層級），直接採用該值，不重新計算——來源與譯文的標題結構可能不同步（例如
+    譯者已手動把某些裝飾符號標題轉成標題，但層級與來源不同），若各自依自身前文重新推算，
+    兩側算出的層級會分歧。未傳入 `level` 時（例如舊呼叫端或未經結構比對的獨立呼叫），才
+    退回依這段文字自身前面最近一個標題的層級往下推算一層（上限六層；找不到則預設層級二）。
 
     供翻譯側工具在依結構對齊找出來源決策對應的譯文區塊位置後，套用該決策。
     """
@@ -698,12 +707,13 @@ def apply_glyph_decision_at(
         if not is_singleton or not segments[0]:
             return text, 0
         if kind == "title":
-            last_heading_level: int | None = None
-            for prior in blocks[:block_index]:
-                if _block_kind(prior.text) == "heading":
-                    first_line = prior.text.split("\n", 1)[0]
-                    last_heading_level = len(first_line) - len(first_line.lstrip("#"))
-            level = min((last_heading_level or 1) + 1, 6)
+            if level is None:
+                last_heading_level: int | None = None
+                for prior in blocks[:block_index]:
+                    if _block_kind(prior.text) == "heading":
+                        first_line = prior.text.split("\n", 1)[0]
+                        last_heading_level = len(first_line) - len(first_line.lstrip("#"))
+                level = min((last_heading_level or 1) + 1, 6)
             replacement = [f"{'#' * level} {segments[0]}"]
         else:
             replacement = [f"- {segments[0]}"]
@@ -722,6 +732,37 @@ def apply_glyph_decision_at(
 
 
 _MAX_SYMBOL_GLYPH_ROUNDS = 10
+
+
+def prepare_source_pre_paragraph_merge(text: str) -> str:
+    """重現來源清理管線中，段落斷行續句合併之前的狀態（去除頁碼裝飾標題、合併清單
+    續句），依 `extract_pdf.py` 實際管線順序：`strip_artifact_headings` →
+    `merge_list_continuations`。
+
+    供翻譯側同步工具（合併段落續句、轉換裝飾符號）共用，取得與來源側清理管線在同一
+    階段一致的結構（標題、清單），避免翻譯側工具因為缺少這兩步而看到不同的結構錨點，
+    導致結構定位與來源側清理結果分歧。
+    """
+    text = strip_artifact_headings(text)
+    text, _ = merge_list_continuations(text)
+    return text
+
+
+def prepare_source_pre_glyph_conversion(text: str) -> str:
+    """重現來源清理管線中，符號裝飾轉換之前那一刻的狀態，在
+    `prepare_source_pre_paragraph_merge` 之上，再收斂執行頁碼殘留清除與段落續句合併
+    （對應 `clean_symbol_glyph_ornaments` 迴圈中，符號轉換前的部分）。
+
+    供 `convert_translated_symbol_glyphs.py` 依此文字做符號裝飾分類，確保分類依據與
+    來源側清理管線在同一階段看到的文字一致。
+    """
+    text = prepare_source_pre_paragraph_merge(text)
+    for _ in range(_MAX_SYMBOL_GLYPH_ROUNDS):
+        text, stripped = strip_trailing_page_number_residue(text)
+        text, merged, _ambiguous = merge_paragraph_continuations(text)
+        if stripped == 0 and merged == 0:
+            break
+    return text
 
 
 def clean_symbol_glyph_ornaments(text: str, glyphs: Sequence[str]) -> tuple[str, dict[str, object]]:

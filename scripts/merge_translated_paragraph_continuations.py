@@ -29,6 +29,7 @@ from _markdown_utils import (
     find_paragraph_block_starts,
     find_paragraph_continuation_breaks,
     merge_paragraph_continuation_at,
+    prepare_source_pre_paragraph_merge,
 )
 from validate_translation_structure import (
     build_alignment_windows,
@@ -58,7 +59,7 @@ def pair_files(source: Path, translation: Path) -> list[tuple[Path, Path]]:
 
 def merge_one_pair(source_path: Path, translation_path: Path, *, dry_run: bool) -> dict[str, Any]:
     """對單一來源／譯文檔配對套用合併，回傳該檔案的處理結果。"""
-    source_text = source_path.read_text(encoding="utf-8")
+    source_text = prepare_source_pre_paragraph_merge(source_path.read_text(encoding="utf-8"))
     source_lines, _ambiguous = find_paragraph_continuation_breaks(source_text)
     result: dict[str, Any] = {
         "source": str(source_path),
@@ -73,7 +74,7 @@ def merge_one_pair(source_path: Path, translation_path: Path, *, dry_run: bool) 
     translation_text = translation_path.read_text(encoding="utf-8")
     source_tokens = extract_structure(source_text)
     draft_tokens = extract_structure(translation_text)
-    windows = build_alignment_windows(source_tokens, draft_tokens)
+    windows = build_alignment_windows(source_tokens, draft_tokens, heading_level_sensitive=False)
 
     target_draft_lines: list[int] = []
     for source_line in source_lines:

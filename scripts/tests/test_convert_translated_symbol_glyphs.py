@@ -145,6 +145,41 @@ class TestConvertOnePair:
         assert result["leftover"] == 0
         assert translation.read_text(encoding="utf-8") == TRANSLATION_TITLE_CONVERTED
 
+    def test_title_level_follows_source_decision_not_local_draft_context(self, tmp_path):
+        # The translator's own preceding heading uses a different level than
+        # the source's (## vs #): recomputing the glyph title's level from
+        # local draft context alone would diverge from the source's decision
+        # and fail the structure gate. The level must come from the source's
+        # own decision instead.
+        source = tmp_path / "source.md"
+        translation = tmp_path / "translation.md"
+        source.write_text(
+            "## Chapter\n"
+            "\n"
+            "This is a complete introductory sentence that ends properly.\n"
+            "\n"
+            f"{GLYPH} Goal of the Game\n"
+            "\n"
+            "More prose follows this heading and continues normally.\n",
+            encoding="utf-8",
+        )
+        translation.write_text(
+            "# 章節\n"
+            "\n"
+            "這是一段完整的介紹句子，並以句號正確結尾。\n"
+            "\n"
+            f"{GLYPH} 遊戲目標\n"
+            "\n"
+            "標題之後接著更多文字，故事繼續正常發展下去。\n",
+            encoding="utf-8",
+        )
+
+        result = convert_one_pair(source, translation, [GLYPH], dry_run=False)
+
+        assert result["titles"] == 1
+        assert result["unresolved"] == []
+        assert "### 遊戲目標" in translation.read_text(encoding="utf-8")
+
     def test_dry_run_does_not_write(self, tmp_path):
         source = tmp_path / "source.md"
         translation = tmp_path / "translation.md"

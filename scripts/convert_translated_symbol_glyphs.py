@@ -33,19 +33,19 @@ from typing import Any, Sequence
 
 from _markdown_utils import (
     apply_glyph_decision_at,
+    clean_symbol_glyph_ornaments,
     find_glyph_block_starts,
     find_symbol_glyph_block_decisions,
-    merge_paragraph_continuations,
-    strip_trailing_page_number_residue,
+    prepare_source_pre_glyph_conversion,
 )
 from validate_translation_structure import (
     build_alignment_windows,
     extract_structure,
     find_alignment_window,
+    realign_heading_levels,
 )
 
 MARKDOWN_SUFFIXES = {".md", ".mdx"}
-_MAX_SOURCE_PREP_ROUNDS = 10
 
 
 def pair_files(source: Path, translation: Path) -> list[tuple[Path, Path]]:
@@ -80,16 +80,6 @@ def load_symbol_glyphs(project_root: Path) -> list[str]:
     return list(glyphs)
 
 
-def prepare_source(text: str) -> str:
-    """在轉換裝飾符號前，先讓來源的頁碼殘留清除與段落斷行續句合併收斂。"""
-    for _ in range(_MAX_SOURCE_PREP_ROUNDS):
-        text, stripped = strip_trailing_page_number_residue(text)
-        text, merged, _ambiguous = merge_paragraph_continuations(text)
-        if stripped == 0 and merged == 0:
-            break
-    return text
-
-
 def _count_glyph_occurrences(text: str, glyphs: Sequence[str]) -> int:
     return sum(text.count(glyph) for glyph in glyphs)
 
@@ -108,87 +98,103 @@ def convert_one_pair(
         "dropped": 0,
         "unresolved": [],
         "leftover": 0,
+        "heading_levels_realigned": 0,
     }
     if not glyphs:
         return result
 
     translation_text = translation_path.read_text(encoding="utf-8")
     result["candidates"] = _count_glyph_occurrences(translation_text, glyphs)
-    if not result["candidates"]:
-        return result
 
-    source_text = prepare_source(source_path.read_text(encoding="utf-8"))
-    decisions = [d for d in find_symbol_glyph_block_decisions(source_text, glyphs) if not d.deferred_tail]
+    source_text = prepare_source_pre_glyph_conversion(source_path.read_text(encoding="utf-8"))
 
-    # Fast path: when the whole file has exactly as many glyph-bearing draft
-    # blocks as source decisions, pair them directly by document order. This
-    # is the common case and sidesteps window-boundary rounding (structural
-    # anchors on the two sides don't always land on exactly the same line),
-    # which can otherwise push a decision's target block just outside its
-    # computed window even though the file-wide counts agree.
-    all_draft_glyph_blocks = find_glyph_block_starts(translation_text, glyphs)
-    if len(all_draft_glyph_blocks) == len(decisions):
-        applies = [
-            (draft_line, decision.kind, decision.line)
-            for decision, draft_line in zip(decisions, all_draft_glyph_blocks)
-        ]
-    else:
-        # Fall back to per-window pairing: some sections of this file may
-        # already have been smoothed into prose during translation (no glyph
-        # residue left there — nothing to convert, not a failure) while
-        # others still carry the literal glyph and need conversion, so a
-        # single file-wide count can't be trusted; match locally instead,
-        # scoped by the same structural alignment windows the paragraph
-        # continuation merge tools use.
-        source_tokens = extract_structure(source_text)
-        draft_tokens = extract_structure(translation_text)
-        windows = build_alignment_windows(source_tokens, draft_tokens)
+    if result["candidates"]:
+        decisions = [d for d in find_symbol_glyph_block_decisions(source_text, glyphs) if not d.deferred_tail]
 
-        decisions_by_window: dict[tuple[int, int | None, int, int | None], list] = {}
-        for decision in decisions:
-            window = find_alignment_window(windows, decision.line)
-            if window is None:
-                continue
-            decisions_by_window.setdefault(window, []).append(decision)
-
-        applies = []
-        for window, window_decisions in decisions_by_window.items():
-            _source_lo, _source_hi, draft_lo, draft_hi = window
-            draft_glyph_blocks = find_glyph_block_starts(translation_text, glyphs, draft_lo, draft_hi)
-            if not draft_glyph_blocks:
-                # The translation carries no glyph residue in this window (e.g.
-                # the translator already smoothed the ornament into prose);
-                # nothing to convert here, and it is not a failure.
-                continue
-            if len(draft_glyph_blocks) != len(window_decisions):
-                result["unresolved"].extend(decision.line for decision in window_decisions)
-                continue
-            for decision, draft_line in zip(window_decisions, draft_glyph_blocks):
-                applies.append((draft_line, decision.kind, decision.line))
-
-    # Apply from the bottom of the file up so earlier splits don't shift the
-    # line numbers of decisions still pending above them.
-    applies.sort(key=lambda item: item[0], reverse=True)
-    counted_kind = {
-        "title": "titles",
-        "list_singleton": "list_items_from_singleton",
-        "list_split": "list_items_from_split",
-        "drop": "dropped",
-    }
-    for draft_line, kind, source_line in applies:
-        translation_text, item_count = apply_glyph_decision_at(translation_text, draft_line, kind, glyphs)
-        if item_count:
-            result[counted_kind[kind]] += item_count
+        # Fast path: when the whole file has exactly as many glyph-bearing draft
+        # blocks as source decisions, pair them directly by document order. This
+        # is the common case and sidesteps window-boundary rounding (structural
+        # anchors on the two sides don't always land on exactly the same line),
+        # which can otherwise push a decision's target block just outside its
+        # computed window even though the file-wide counts agree.
+        all_draft_glyph_blocks = find_glyph_block_starts(translation_text, glyphs)
+        if len(all_draft_glyph_blocks) == len(decisions):
+            applies = [
+                (draft_line, decision.kind, decision.line, decision.level)
+                for decision, draft_line in zip(decisions, all_draft_glyph_blocks)
+            ]
         else:
-            result["unresolved"].append(source_line)
+            # Fall back to per-window pairing: some sections of this file may
+            # already have been smoothed into prose during translation (no glyph
+            # residue left there — nothing to convert, not a failure) while
+            # others still carry the literal glyph and need conversion, so a
+            # single file-wide count can't be trusted; match locally instead,
+            # scoped by the same structural alignment windows the paragraph
+            # continuation merge tools use.
+            source_tokens = extract_structure(source_text)
+            draft_tokens = extract_structure(translation_text)
+            windows = build_alignment_windows(source_tokens, draft_tokens, heading_level_sensitive=False)
 
-    result["leftover"] = _count_glyph_occurrences(translation_text, glyphs)
+            decisions_by_window: dict[tuple[int, int | None, int, int | None], list] = {}
+            for decision in decisions:
+                window = find_alignment_window(windows, decision.line)
+                if window is None:
+                    continue
+                decisions_by_window.setdefault(window, []).append(decision)
+
+            applies = []
+            for window, window_decisions in decisions_by_window.items():
+                _source_lo, _source_hi, draft_lo, draft_hi = window
+                draft_glyph_blocks = find_glyph_block_starts(translation_text, glyphs, draft_lo, draft_hi)
+                if not draft_glyph_blocks:
+                    # The translation carries no glyph residue in this window (e.g.
+                    # the translator already smoothed the ornament into prose);
+                    # nothing to convert here, and it is not a failure.
+                    continue
+                if len(draft_glyph_blocks) != len(window_decisions):
+                    result["unresolved"].extend(decision.line for decision in window_decisions)
+                    continue
+                for decision, draft_line in zip(window_decisions, draft_glyph_blocks):
+                    applies.append((draft_line, decision.kind, decision.line, decision.level))
+
+        # Apply from the bottom of the file up so earlier splits don't shift the
+        # line numbers of decisions still pending above them.
+        applies.sort(key=lambda item: item[0], reverse=True)
+        counted_kind = {
+            "title": "titles",
+            "list_singleton": "list_items_from_singleton",
+            "list_split": "list_items_from_split",
+            "drop": "dropped",
+        }
+        for draft_line, kind, source_line, level in applies:
+            translation_text, item_count = apply_glyph_decision_at(
+                translation_text, draft_line, kind, glyphs, level=level
+            )
+            if item_count:
+                result[counted_kind[kind]] += item_count
+            else:
+                result["unresolved"].append(source_line)
+
+        result["leftover"] = _count_glyph_occurrences(translation_text, glyphs)
+
+    # Existing, non-glyph headings can also disagree in level with the cleaned
+    # source (e.g. a translator's own heading, unrelated to any ornament) —
+    # realign every structurally-aligned heading pair to the source's level so
+    # both sides share the one level decision (see `realign_heading_levels`).
+    cleaned_source_text, _cleanup_info = clean_symbol_glyph_ornaments(source_text, glyphs)
+    source_tokens = extract_structure(cleaned_source_text)
+    draft_tokens = extract_structure(translation_text)
+    translation_text, realigned_count = realign_heading_levels(
+        source_tokens, draft_tokens, translation_text
+    )
+    result["heading_levels_realigned"] = realigned_count
 
     converted = (
         result["titles"]
         + result["list_items_from_singleton"]
         + result["list_items_from_split"]
         + result["dropped"]
+        + result["heading_levels_realigned"]
     )
     if converted and not dry_run:
         translation_path.write_text(translation_text, encoding="utf-8")
@@ -245,15 +251,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         + result["dropped"]
         for result in file_results
     )
+    total_realigned = sum(result["heading_levels_realigned"] for result in file_results)
     total_unresolved = sum(len(result["unresolved"]) for result in file_results)
     total_leftover = sum(result["leftover"] for result in file_results)
     payload = {
         "dry_run": args.dry_run,
         "files_scanned": len(file_results),
         "total_converted": total_converted,
+        "total_realigned": total_realigned,
         "total_unresolved": total_unresolved,
         "total_leftover": total_leftover,
-        "files": [result for result in file_results if result["candidates"]],
+        "files": [
+            result
+            for result in file_results
+            if result["candidates"] or result["heading_levels_realigned"]
+        ],
     }
 
     if args.json:
@@ -274,9 +286,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"{result['list_items_from_split']}、刪除裝飾符號 {result['dropped']}）: "
                     f"{result['translation']}"
                 )
+            if result["heading_levels_realigned"]:
+                print(
+                    f"✓ 標題層級已改對齊來源 {result['heading_levels_realigned']} 處: "
+                    f"{result['translation']}"
+                )
             for source_line in result["unresolved"]:
                 print(f"⚠️  無法對齊譯文位置（來源第 {source_line} 行）: {result['translation']}")
-        print(f"共掃描 {payload['files_scanned']} 組檔案，{verb} {total_converted} 處")
+        print(f"共掃描 {payload['files_scanned']} 組檔案，{verb} {total_converted} 處，標題層級改對齊 {total_realigned} 處")
         print(f"轉換後剩餘裝飾符號殘留字元: {total_leftover}")
         if total_unresolved:
             print(f"⚠️  {total_unresolved} 處無法對齊，需人工確認")

@@ -9,7 +9,12 @@ import sys
 
 import pytest
 
-from validate_translation_structure import build_alignment_windows, extract_structure, find_alignment_window
+from validate_translation_structure import (
+    build_alignment_windows,
+    extract_structure,
+    find_alignment_window,
+    realign_heading_levels,
+)
 
 
 SCRIPT = Path(__file__).parents[1] / "validate_translation_structure.py"
@@ -294,6 +299,41 @@ def test_missing_input_returns_machine_readable_error(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+class TestBlankPlaceholderTables:
+    """PDF card-border boxes with no legible text extract as a header+separator-only,
+    single empty-cell table (`| |` / `|---|`). Both source and draft sides carry these
+    identically shaped, content-free artifacts; requiring them to match structurally
+    only risks `SequenceMatcher` pairing a real heading with one of many interchangeable
+    blanks nearby, as seen in a real repro chapter (minimized here)."""
+
+    def test_blank_placeholder_table_is_excluded_from_structure(self):
+        text = "###### Title\n\n| |\n|---|\n"
+        tokens = extract_structure(text)
+        assert [t.kind for t in tokens] == ["heading"]
+
+    def test_reordered_blank_tables_around_headings_do_not_conflict(self, tmp_path):
+        source = (
+            "###### WalkinG CorPse\n\n###### musiC\n\n"
+            "Kedamono of bone and rotting flesh.\n\n"
+            "| |\n|---|\n\n| |\n|---|\n"
+        )
+        draft = (
+            "外典\n\n外典\n\n| |\n|---|\n\n| |\n|---|\n\n"
+            "# 行屍\n\n# 音樂\n\n由骨骸與腐肉構成的暗獸。\n"
+        )
+        result = run_validator(tmp_path, source, draft)
+        payload = json.loads(result.stdout)
+        assert "table" not in finding_kinds(payload)
+
+    def test_a_real_data_table_difference_is_still_rejected(self, tmp_path):
+        source = "# Title\n\n| Roll | Result |\n| --- | --- |\n| 1 | Miss |\n"
+        draft = "# 標題\n\n| 骰值 | 結果 |\n| --- | --- |\n"
+        result = run_validator(tmp_path, source, draft)
+        payload = json.loads(result.stdout)
+        assert payload["valid"] is False
+        assert "table" in finding_kinds(payload)
+
+
 class TestBuildAlignmentWindows:
     def test_windows_span_between_matching_headings(self):
         source = "## Chapter\n\nfirst paragraph here.\n\n## Next Chapter\n\nlast paragraph here.\n"
@@ -333,3 +373,64 @@ class TestFindAlignmentWindow:
         windows = build_alignment_windows(extract_structure(source), extract_structure(draft))
 
         assert find_alignment_window(windows, 1) is None
+
+
+class TestRealignHeadingLevels:
+    """Both the paragraph-continuation and symbol-glyph translation-side tools rely on
+    this to make an already-committed draft heading's level follow the source's, so a
+    translator's own pre-existing heading (not just a glyph-converted one) that merely
+    uses a different level than the source is not flagged as a structure mismatch."""
+
+    def test_realigns_a_mismatched_level_pair(self):
+        source = "# Title\n\nintro paragraph text here.\n\n###### Card Name\n\nmore text.\n"
+        draft = "# 標題\n\n介紹段落文字在此。\n\n# 卡片名稱\n\n更多文字。\n"
+
+        result, count = realign_heading_levels(
+            extract_structure(source), extract_structure(draft), draft
+        )
+
+        assert count == 1
+        assert "###### 卡片名稱" in result
+
+    def test_leaves_unchanged_when_already_matching(self):
+        source = "###### Card Name\n\nmore text.\n"
+        draft = "###### 卡片名稱\n\n更多文字。\n"
+
+        result, count = realign_heading_levels(
+            extract_structure(source), extract_structure(draft), draft
+        )
+
+        assert count == 0
+        assert result == draft
+
+    def test_does_not_misalign_a_correct_heading_when_an_earlier_one_is_missing_from_draft(self):
+        # Minimized from a real repro (dreadhare): the source has two extra
+        # headings (a species subheading, twice) that never made it into the
+        # draft at all (no glyph residue left to recover them from). Naively
+        # pairing "any heading" to "any heading" by document order (ignoring
+        # level) then shifts every later pairing by two and corrupts an
+        # already-correct, unrelated heading further down the document.
+        # Anchors (the image) must bound the pairing so the missing headings'
+        # window is left alone instead of corrupting the next window.
+        source = (
+            "# Species\n\n"
+            "#### Subheading One\n\nsome species prose.\n\n"
+            "#### Subheading Two\n\nmore species prose.\n\n"
+            "![img](x.png)\n\n"
+            "###### Card Title\n\ncard prose.\n"
+        )
+        draft = (
+            "# 物種\n\n"
+            "some species prose 已翻譯但遺漏子標題。\n\n"
+            "more species prose 同樣遺漏。\n\n"
+            "![img](x.png)\n\n"
+            "###### 卡片標題\n\ncard prose 已翻譯。\n"
+        )
+
+        result, count = realign_heading_levels(
+            extract_structure(source), extract_structure(draft), draft
+        )
+
+        assert "# 物種" in result
+        assert "###### 卡片標題" in result
+        assert count == 0

@@ -205,6 +205,20 @@ class TestStripArtifactHeadings:
         text = "## Chapter 33: The Beginning"
         assert strip_artifact_headings(text) == text
 
+    def test_removes_single_letter_heading(self):
+        # OpenDataLoader occasionally misdetects a page-corner drop-cap
+        # fragment as its own heading (e.g. Kedamono Opera basic-rules/index
+        # page 1/2: "###### a" / "###### d" with only an image below them).
+        text = "content\n\n###### a\n\nmore content"
+        result = strip_artifact_headings(text)
+        assert "###### a" not in result
+        assert "content" in result
+        assert "more content" in result
+
+    def test_keeps_multi_letter_short_heading(self):
+        text = "## AI\ncontent"
+        assert strip_artifact_headings(text) == text
+
     def test_collapses_blank_lines_left_behind(self):
         text = "line1\n\n# 5\n\nline2"
         result = strip_artifact_headings(text)

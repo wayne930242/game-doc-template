@@ -93,8 +93,17 @@ tesseract --list-langs
 | `validate_translation_structure.py` | 比對來源與譯稿的 Markdown／MDX 區塊結構 |
 | `merge_translated_list_continuations.py` | 依英文原文位置比對，合併已翻譯 Markdown 中被誤判為清單項目的斷行續句 |
 | `merge_translated_paragraph_continuations.py` | 依英文原文位置與結構錨點比對，合併已翻譯 Markdown 中被誤斷為兩個段落的斷行續句 |
+| `convert_translated_symbol_glyphs.py` | 依英文原文分類決策與結構錨點比對，轉換已翻譯 Markdown 中殘留的裝飾符號字型字元 |
 | `draft.py` | 管理翻譯草稿檔（`path`／`chunk-path`／`writeback`／`clean`） |
 | `bilingual_prep.py` | 將來源英文 Markdown 轉換為含佔位符的雙語翻譯草稿 |
+
+**同步既有翻譯時的執行順序**：`merge_translated_paragraph_continuations.py` 與
+`convert_translated_symbol_glyphs.py` 都需要**清理前**、仍帶有裝飾符號字元的英文來源
+（`pre-cleanup-source.md` 對應檔）才能正確分類；兩者跑完後，`validate_translation_structure.py`
+的守門比對則要對照**清理後**的英文來源（`cleaned-source.md` 對應檔，已跑過
+`extract_pdf.py` 的 `clean_artifact_headings` → `clean_list_continuations` →
+`clean_paragraph_continuations` → `clean_symbol_glyphs`）。用清理後的來源餵給前兩個
+CLI 分類，會因為裝飾符號已被轉換掉而找不到任何轉換候選。
 
 ### 內部共用庫（`_*.py`，不直接執行）
 
