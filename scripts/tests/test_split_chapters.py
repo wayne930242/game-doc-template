@@ -1,5 +1,7 @@
 """Tests for split_chapters module."""
 
+import json
+
 import pytest
 
 from split_chapters import (
@@ -459,6 +461,32 @@ class TestGroupImagesByPage:
 
         assert skipped == 0
         assert [img["filename"] for img in page_images[1]] == ["b.png", "a.png", "c.png"]
+
+
+def test_split_filters_panel_pieces_per_output_page(tmp_path: Path):
+    samples = json.loads((Path(__file__).parent / "fixtures/kedamono_image_fragments.json").read_text())
+    prefixes = ("page024_img01", "page063_img00", "page065_img00", "page080_img01",
+                "page081_img01", "page112_img01", "page113_img01")
+    images = [image for image in samples if image["filename"].startswith(prefixes)]
+    image_dir = tmp_path / "data/markdown/images/Book"
+    image_dir.mkdir(parents=True)
+    for image in images:
+        image["path"] = f"images/Book/{image['filename']}"
+        (image_dir / image["filename"]).write_bytes(b"image fixture")
+    (image_dir / "manifest.json").write_text(json.dumps({"images": images}))
+    pages = tmp_path / "data/markdown/Book_pages.md"
+    pages.write_text("<!-- PAGE 24 -->\n\nRule text.\n\n<!-- PAGE 63 -->\n\nPanel text.\n\n"
+                     "<!-- PAGE 65 -->\n\nMore panel text.\n")
+    config = {"source": "data/markdown/Book_pages.md", "output_dir": "docs/src/content/docs",
+              "images": {"enabled": True, "assets_dir": "docs/src/assets/extracted"},
+              "chapters": {"rules": {"title": "Rules", "files": {
+                  "single": {"title": "Single", "pages": [24, 24]},
+                  "panel": {"title": "Panel", "pages": [63, 65]}}}}}
+    split_chapters(config, tmp_path)
+    single = (tmp_path / "docs/src/content/docs/rules/single.md").read_text()
+    panel = (tmp_path / "docs/src/content/docs/rules/panel.md").read_text()
+    assert "page024_img01" in single
+    assert "page063_img00" not in panel and "page065_img00" not in panel
 
 
 # ---------------------------------------------------------------------------

@@ -7,9 +7,11 @@ from pathlib import Path
 
 from _layout_cleanup import (
     annotate_d66_pair_headings,
+    chapter_fragment_classes,
     d66_pair_pages,
     d66_pages,
     is_edge_furniture,
+    is_inner_edge_sliver,
     is_edge_sliver,
     is_edge_tab,
     is_page_ornament,
@@ -455,6 +457,74 @@ def test_repair_drops_edge_tabs_on_an_edited_project(tmp_path: Path):
 
 def _page_art_samples() -> list[dict]:
     return json.loads((Path(__file__).parent / "fixtures/kedamono_page_art.json").read_text())
+
+
+def _fragment_samples() -> list[dict]:
+    return json.loads((Path(__file__).parent / "fixtures/kedamono_image_fragments.json").read_text())
+
+
+def test_fragment_samples_keep_single_symbols_and_pale_art():
+    samples = _fragment_samples()
+    classes = layout_art_classes(samples)
+    name = lambda prefix: next(image["filename"] for image in samples if image["filename"].startswith(prefix))
+    for prefix in ("page018_img02", "page019_img01", "page019_img02"):
+        assert classes[name(prefix)] == "paper_texture"
+    for prefix in ("page239_img00", "page242_img00", "page244_img00"):
+        assert classes[name(prefix)] == "small_binary_fragment"
+    assert classes[name("page201_img01")] == "repeated_tiny_fragment"
+    for prefix in ("page239_img01", "page244_img03"):
+        assert classes[name(prefix)] == "repeated_small_mark"
+    assert all(classes[image["filename"]] == "repeated_thin_rule" for image in samples
+               if image["filename"].startswith("page251_img04"))
+    for prefix in ("page021_img00", "page021_img01", "page173_img00", "page024_img01"):
+        assert name(prefix) not in classes
+    centered = {**next(image for image in samples if image["filename"].startswith("page239_img01")),
+                "filename": "centered-icon.png", "x": 180, "file_size": 15000}
+    assert centered["filename"] not in layout_art_classes(samples + [centered])
+
+
+def test_inner_edge_crop_uses_pixel_evidence():
+    sliver = next(image for image in _fragment_samples() if image["filename"].startswith("page132_img00"))
+    assert is_inner_edge_sliver(sliver)
+    assert is_inner_edge_sliver({**sliver, "x": sliver["x"] - 15})
+    assert not is_inner_edge_sliver({**sliver, "file_size": 20000})
+    assert not is_inner_edge_sliver({**sliver, "x": 180})
+
+
+def test_repeated_panel_fragments_need_multiple_pieces_in_output_page():
+    samples = _fragment_samples()
+    classes = chapter_fragment_classes(samples, 63, 65)
+    assert {name.split("_img")[0] for name in classes} == {"page063", "page065"}
+    assert set(classes.values()) == {"repeated_panel_piece"}
+    assert chapter_fragment_classes(samples, 1, 28) == {}
+    single_page = [image for image in samples if image["filename"].startswith("page156_img01")]
+    assert len(chapter_fragment_classes(single_page, 156, 156)) == 4
+
+
+def test_reused_chapter_art_matches_resized_crop_but_keeps_distinct_art(tmp_path: Path):
+    import cv2
+    import numpy as np
+
+    rng = np.random.default_rng(31)
+    first = np.full((500, 500), 255, dtype=np.uint8)
+    for _ in range(500):
+        x, y = rng.integers(20, 480, size=2)
+        cv2.circle(first, (int(x), int(y)), int(rng.integers(3, 16)),
+                   int(rng.integers(0, 180)), int(rng.integers(1, 3)))
+    crop = cv2.resize(first, (750, 750))[20:730, 20:730]
+    other = rng.integers(0, 256, (500, 500), dtype=np.uint8)
+    images = []
+    for page, pixels in ((1, first), (2, crop), (3, other)):
+        name = f"art-{page}.png"
+        cv2.imwrite(str(tmp_path / name), pixels)
+        images.append({"page": page, "filename": name, "coverage_ratio": 0.2,
+                       "file_size": (tmp_path / name).stat().st_size,
+                       "gray_mean": 127, "pixel_sha256": str(page)})
+    classes = chapter_fragment_classes(images, 1, 3, tmp_path)
+    assert classes == {"art-2.png": "reused_chapter_art"}
+    assert chapter_fragment_classes(images, 2, 3, tmp_path) == {}
+    late_copy = {**images[0], "page": 8, "filename": "art-8.png"}
+    assert "art-8.png" not in chapter_fragment_classes(images + [late_copy], 1, 8, tmp_path)
 
 
 def test_real_page_art_samples_separate_print_art_from_illustrations():

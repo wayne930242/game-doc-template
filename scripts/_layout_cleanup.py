@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from pathlib import Path
 
 
 def placement_key(image: dict) -> tuple | None:
@@ -109,7 +110,21 @@ def is_edge_tab(image: dict) -> bool:
 
 
 def is_edge_furniture(image: dict) -> bool:
-    return is_edge_sliver(image) or is_edge_tab(image)
+    return is_edge_sliver(image) or is_edge_tab(image) or is_inner_edge_sliver(image)
+
+
+def is_inner_edge_sliver(image: dict) -> bool:
+    """Find low-detail, narrow frame crops close to a page's vertical edge."""
+    keys = ("x", "width", "height", "page_width", "file_size", "dominant_color_ratio", "edge_density")
+    if any(image.get(key) is None for key in keys):
+        return False
+    x, width, height, page_width = (float(image[key]) for key in keys[:4])
+    return (page_width > 0 and width > 0 and height > 0
+            and width <= page_width * 0.11 and height >= width * 10
+            and (x <= page_width * 0.05 or x + width >= page_width * 0.95)
+            and int(image["file_size"]) <= 5000
+            and float(image["dominant_color_ratio"]) >= 0.8
+            and float(image["edge_density"]) <= 0.05)
 
 
 def is_page_ornament(image: dict, repeat_count: int) -> bool:
@@ -137,9 +152,9 @@ def is_page_ornament(image: dict, repeat_count: int) -> bool:
 def layout_art_classes(images: list[dict]) -> dict[str, str]:
     """Classify non-content page art using decoded pixels and PDF placement.
 
-    Large pale, low-edge images are paper; near-binary black/white images are
-    clipping masks. The recorded image fixtures include both classes and dark,
-    high-detail full-page illustrations that remain content.
+    Pale, low-edge images are paper; near-binary black/white images are
+    clipping masks or small frame fragments. Repeated pixels identify small
+    marginal marks and thin rules.
     """
     images = unique_placements(images)
     classified: dict[str, str] = {}
@@ -150,23 +165,50 @@ def layout_art_classes(images: list[dict]) -> dict[str, str]:
         mean = image.get("gray_mean")
         deviation = image.get("gray_std")
         edges = image.get("edge_density")
-        if coverage >= 0.35 and all(value is not None for value in (mean, deviation, edges)):
-            if float(mean) >= 180 and float(deviation) <= 55 and float(edges) <= 0.07:
+        if all(value is not None for value in (mean, deviation, edges)):
+            if (coverage >= 0.35 or (coverage >= 0.15 and float(deviation) >= 10)) and (
+                    float(mean) >= 180 and float(deviation) <= 55 and float(edges) <= 0.07):
                 classified[filename] = "paper_texture"
             elif (coverage >= 0.45 and float(deviation) >= 90 and float(edges) <= 0.12
                   and float(image.get("white_ratio") or 0) >= 0.15
                   and float(image.get("black_ratio") or 0) >= 0.4
                   and float(image.get("white_ratio") or 0) + float(image.get("black_ratio") or 0) >= 0.8):
                 classified[filename] = "ink_mask"
+            if (0.02 <= coverage <= 0.1 and image.get("file_size") is not None
+                    and int(image["file_size"]) <= 10000
+                    and float(edges) <= 0.1
+                    and float(image.get("white_ratio") or 0) + float(image.get("black_ratio") or 0) >= 0.95
+                    and float(image.get("dominant_color_ratio") or 0) >= 0.6
+                    and not is_inner_edge_sliver(image)):
+                classified[filename] = "small_binary_fragment"
         if image.get("pixel_sha256"):
             by_digest.setdefault(str(image["pixel_sha256"]), []).append(image)
 
-    # A pair of wide, shallow marks on the same page decorates the printed page.
+    # Reused small marks and paired shallow rules decorate the printed page.
     for group in by_digest.values():
         pages = Counter(int(image["page"]) for image in group)
         for image in group:
             pw, ph = float(image.get("page_width") or 0), float(image.get("page_height") or 0)
             width, height = float(image.get("width") or 0), float(image.get("height") or 0)
+            coverage = float(image.get("coverage_ratio") or 0)
+            x = image.get("x")
+            marginal = x is not None and (float(x) <= pw * 0.13 or float(x) + width >= pw * 0.87)
+            simple = (image.get("file_size") is not None and int(image["file_size"]) <= 500
+                      and image.get("edge_density") is not None and float(image["edge_density"]) <= 0.02)
+            if (len(pages) >= 3 and pw and ph and width > 0 and height > 0
+                    and width <= pw * 0.13 and height <= ph * 0.1 and coverage <= 0.01
+                    and (marginal or simple)):
+                classified[image["filename"]] = "repeated_small_mark"
+            if (pages[int(image["page"])] >= 2 and pw and ph
+                    and width <= pw * 0.055 and height <= ph * 0.045
+                    and coverage <= 0.002):
+                classified[image["filename"]] = "repeated_tiny_fragment"
+            if (pages[int(image["page"])] >= 2 and pw and ph and height > 0
+                    and width <= pw * 0.55 and height <= ph * 0.025
+                    and width / height >= 12 and coverage <= 0.02
+                    and image.get("file_size") is not None
+                    and int(image["file_size"]) <= 1000):
+                classified[image["filename"]] = "repeated_thin_rule"
             if (pages[int(image["page"])] >= 2 and pw and ph and
                     width <= pw * 0.36 and height <= ph * 0.07 and
                     width / max(height, 1) >= 3.4):
@@ -198,6 +240,83 @@ def _same_large_art(first: dict, image: dict) -> bool:
             and abs(float(first["gray_mean"]) - float(image["gray_mean"])) <= 5
             and abs(float(first["gray_std"]) - float(image["gray_std"])) <= 5
             and (int(str(first["visual_hash"]), 16) ^ int(str(image["visual_hash"]), 16)).bit_count() <= 10)
+
+
+def chapter_fragment_classes(images: list[dict], start: int, end: int, image_dir: Path | None = None) -> dict[str, str]:
+    """Classify repeated panel pieces and reused art within one output page."""
+    images = unique_placements(images)
+    global_art = layout_art_classes(images)
+    chapter = sorted((image for image in images if start <= int(image["page"]) <= end),
+                     key=lambda image: (int(image["page"]), image["filename"]))
+    digest_pages: dict[str, Counter[int]] = {}
+    for image in images:
+        if digest := image.get("pixel_sha256"):
+            digest_pages.setdefault(str(digest), Counter())[int(image["page"])] += 1
+    panels = [image for image in chapter if _is_repeated_panel_piece(image, digest_pages)]
+    classified = ({image["filename"]: "repeated_panel_piece" for image in panels}
+                  if len(panels) >= 2 else {})
+
+    previous: list[dict] = []
+    feature_cache: dict[str, tuple] = {}
+    for image in chapter:
+        if image["filename"] in classified or image["filename"] in global_art or not _is_art_candidate(image):
+            continue
+        match = next((first for first in previous if 0 < int(image["page"]) - int(first["page"]) <= 4
+                      and _same_chapter_art(first, image, image_dir, feature_cache)), None)
+        if match is None:
+            previous.append(image)
+        else:
+            classified[image["filename"]] = "reused_chapter_art"
+    return classified
+
+
+def _is_repeated_panel_piece(image: dict, digest_pages: dict[str, Counter[int]]) -> bool:
+    pw, ph = float(image.get("page_width") or 0), float(image.get("page_height") or 0)
+    width, height = float(image.get("width") or 0), float(image.get("height") or 0)
+    coverage = float(image.get("coverage_ratio") or 0)
+    digest = str(image.get("pixel_sha256") or "")
+    occurrences = digest_pages.get(digest, Counter())
+    repeated = len(occurrences) >= 3 or max(occurrences.values(), default=0) >= 3
+    return bool(pw and ph and height and digest and repeated
+                and coverage <= 0.04 and width <= pw * 0.4 and height <= ph * 0.12
+                and width / height >= 2.3)
+
+
+def _is_art_candidate(image: dict) -> bool:
+    return (float(image.get("coverage_ratio") or 0) >= 0.07
+            and int(image.get("file_size") or 0) >= 50000)
+
+
+def _same_chapter_art(first: dict, image: dict, image_dir, feature_cache: dict) -> bool:
+    if first.get("pixel_sha256") and first["pixel_sha256"] == image.get("pixel_sha256"):
+        return True
+    if (image_dir is None or first.get("gray_mean") is None or image.get("gray_mean") is None
+            or abs(float(first["gray_mean"]) - float(image["gray_mean"])) > 25):
+        return False
+    import cv2
+    import numpy as np
+
+    def features(item: dict):
+        name = item["filename"]
+        if name not in feature_cache:
+            path = image_dir / name
+            pixels = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE) if path.is_file() else None
+            feature_cache[name] = ([], None) if pixels is None else cv2.SIFT_create(nfeatures=700).detectAndCompute(pixels, None)
+        return feature_cache[name]
+
+    first_points, first_desc = features(first)
+    image_points, image_desc = features(image)
+    if first_desc is None or image_desc is None:
+        return False
+    pairs = cv2.BFMatcher().knnMatch(first_desc, image_desc, k=2)
+    matches = [best for pair in pairs if len(pair) == 2 for best, second in [pair]
+               if best.distance < second.distance * 0.72]
+    if len(matches) < 60:
+        return False
+    source = np.float32([first_points[pair.queryIdx].pt for pair in matches]).reshape(-1, 1, 2)
+    target = np.float32([image_points[pair.trainIdx].pt for pair in matches]).reshape(-1, 1, 2)
+    _, mask = cv2.findHomography(source, target, cv2.RANSAC, 4.0)
+    return mask is not None and int(mask.sum()) >= 60 and float(mask.mean()) >= 0.7
 
 
 _FURNITURE = re.compile(

@@ -69,6 +69,8 @@ uv run python scripts/repair_layout.py --staged-source .state/layout-repair/sour
 
 第三步完成後，`data/layout-repair.json` 的 `applied` 紀錄即代表本書已修復；之後每次同步都可照同一流程重跑，修復後的人工校稿不會被覆蓋。重跑時前三步回報 `already_applied`，以 `skipped` 列出略過的步驟，並以 `reason` 說明原因：內容自上次修復後未變，或譯文、英文副本已變動而保留原樣。第一步仍會逐行移除頁緣殘片、側邊小標籤、紙紋、墨色遮罩、後續出現的重複插圖，以及同頁重複的飾花；保留其他圖片與人工校稿。結果以 `edge_slivers_removed`、`edge_sliver_files`、`layout_art_removed` 與依類別整理的 `layout_art_files` 回報，並更新計畫中的譯文摘要。`--check` 會列出剩餘的版面問題，包含上述圖片、所有儲存格皆空白的表格（PDF 表單的空白填寫格），以及首個標題重複所屬章節群組名稱（章節封面的部名）的頁面。
 
+圖片規則也會辨識低覆蓋紙紋、低資訊量的二值框片、靠近頁緣的狹長裁片，以及同一網站頁內成組重複的卡片標頭。合併數個 PDF 頁的網站頁會比對相距四頁以內的插圖像素與局部特徵，保留首次出現的版本。單次符號及章節橫幅交由原書對照判讀。
+
 若要讓新版模板的修復規則重新套用到整本書，在前三步加上 `--reapply`，並先刪除 `.state/layout-repair/source` 後重新建立可寫英文副本。這會依 PDF 重新推導計畫並改寫章節，覆蓋上次修復後的人工修改；執行前先提交目前內容，再以 `git diff` 檢查結果。
 
 只有當 PDF 仍無法判定殘餘行的結構時，才逐行檢查 PDF 與 `--structure-report` 指出的章節。把每項決定寫成 JSON 陣列，欄位包含來源章節相對路徑、`source`／`target`、目前行號、原行文字、要套用的 Markdown 標記、PDF 頁碼及判斷理由，例如：

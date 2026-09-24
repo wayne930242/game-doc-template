@@ -55,6 +55,7 @@ from _image_analysis import (
 )
 from _markdown_utils import clean_content, count_page_text_tokens, yaml_safe
 from _layout_cleanup import (
+    chapter_fragment_classes,
     annotate_d66_pair_headings,
     d66_pair_pages,
     d66_pages,
@@ -471,17 +472,20 @@ def build_section_content(
     project_root: Path,
     assets_dir: Path,
     source_slug: str,
+    dropped_images: set[str] | None = None,
 ) -> tuple[str, int]:
     """組合章節內容與對應圖片。"""
     parts = []
     copied_count = 0
+    dropped_images = dropped_images or set()
 
     for page_num in range(start, end + 1):
         if page_num not in pages:
             continue
 
         page_content = strip_page_furniture(strip_chapter_cover(clean_content(pages[page_num], clean_patterns)))
-        images = page_images.get(page_num, [])
+        images = [image for image in page_images.get(page_num, [])
+                  if image["filename"] not in dropped_images]
         image_lines = []
         for image in images:
             target_path = copy_image_to_assets(image, project_root, assets_dir, source_slug)
@@ -529,6 +533,8 @@ def process_files(
     project_root: Path,
     assets_dir: Path,
     source_slug: str,
+    manifest_images: list[dict] | None = None,
+    image_dir: Path | None = None,
 ) -> tuple[int, int]:
     """Recursively process files dict. Returns (total_files, total_images)."""
     total_files = 0
@@ -542,9 +548,10 @@ def process_files(
             start_page, end_page = entry["pages"]
             output_path = output_dir / f"{key}.md"
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            dropped = chapter_fragment_classes(manifest_images or [], start_page, end_page, image_dir)
             section_content, image_count = build_section_content(
                 pages, start_page, end_page, clean_patterns,
-                page_images, output_path, project_root, assets_dir, source_slug,
+                page_images, output_path, project_root, assets_dir, source_slug, set(dropped),
             )
             frontmatter = generate_frontmatter(title, description, order)
             section_content = strip_duplicate_title(section_content, title)
@@ -565,7 +572,7 @@ def process_files(
             write_meta_yml(sub_dir, entry)
             sub_files, sub_images = process_files(
                 entry["files"], sub_dir, pages, clean_patterns,
-                page_images, project_root, assets_dir, source_slug,
+                page_images, project_root, assets_dir, source_slug, manifest_images, image_dir,
             )
             total_files += sub_files
             total_images += sub_images
@@ -638,6 +645,7 @@ def split_chapters(config: dict, project_root: Path):
         sec_files, sec_images = process_files(
             files, section_dir, pages, clean_patterns,
             page_images, project_root, assets_dir, source_slug,
+            manifest_images, manifest_path.parent if manifest_path else None,
         )
         total_files += sec_files
         total_images += sec_images

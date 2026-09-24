@@ -16,7 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from _image_analysis import enrich_image_manifest
-from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, is_edge_furniture, layout_art_classes, repair_d66_tables, strip_duplicate_title, strip_page_furniture
+from _layout_cleanup import annotate_d66_pair_headings, chapter_fragment_classes, d66_pages, d66_pair_pages, is_edge_furniture, layout_art_classes, repair_d66_tables, strip_duplicate_title, strip_page_furniture
 from _markdown_utils import find_empty_tables
 from _paired_layout import _format_translated_spread, _pdf_roles, _tree_digest, add_reviewed_decisions, derive_layout_plan, match_chapter_paths, recorded_repair, repair_paired_layout
 from generate_nav import deployment_base_path, regenerate
@@ -318,6 +318,16 @@ def _image_manifest(project_root: Path, config: dict) -> list[dict]:
     return enrich_image_manifest(json.loads(path.read_text(encoding="utf-8")).get("images", []), path.parent)
 
 
+def _image_dir(project_root: Path, config: dict) -> Path:
+    source = Path(config.get("source", ""))
+    return project_root / "data/markdown/images" / source.stem.removesuffix("_pages")
+
+
+def _chapter_image_classes(manifest: list[dict], leaves: list[tuple[str, dict]], image_dir: Path) -> dict[str, dict[str, str]]:
+    return {f"{slug}.md": chapter_fragment_classes(manifest, *entry["pages"], image_dir)
+            for slug, entry in leaves}
+
+
 def annotate_pair_pages(body: str, pairs: dict[int, int]) -> tuple[str, int]:
     lines = body.splitlines()
     changed = 0
@@ -374,15 +384,16 @@ def remove_edge_slivers(docs: Path, manifest: list[dict]) -> list[str]:
     return removed
 
 
-def remove_classified_art(docs: Path, manifest: list[dict]) -> dict[str, list[str]]:
+def remove_classified_art(docs: Path, manifest: list[dict], chapter_classes: dict[str, dict[str, str]] | None = None) -> dict[str, list[str]]:
     """Remove individual image lines while preserving edited chapter prose."""
     classes = layout_art_classes(manifest)
     removed: dict[str, list[str]] = {}
     for path in sorted(docs.rglob("*.md")):
         original = path.read_text(encoding="utf-8")
+        local_classes = chapter_classes.get(str(path.relative_to(docs)), {}) if chapter_classes else {}
         def drop(match: re.Match[str]) -> str:
             filename = Path(match.group(1)).name
-            kind = classes.get(filename)
+            kind = classes.get(filename) or local_classes.get(filename)
             if kind is None:
                 return match.group(0)
             removed.setdefault(kind, []).append(f"{path.relative_to(docs)}: {filename}")
@@ -403,9 +414,14 @@ def repair(project_root: Path, source_baseline: Path | None = None, reapply: boo
     config_path = project_root / "chapters.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     manifest = _image_manifest(project_root, config)
+    chapters = config["chapters"]
+    for section in chapters.values():
+        section["files"] = normalize_files(section.get("files", {}))
+    leaves = chapter_leaves(chapters)
+    chapter_classes = _chapter_image_classes(manifest, leaves, _image_dir(project_root, config))
     reason = None if reapply else recorded_repair(plan_path, docs)
     slivers = remove_edge_slivers(docs, manifest)
-    art = remove_classified_art(docs, manifest)
+    art = remove_classified_art(docs, manifest, chapter_classes)
     sliver_stats = {"edge_slivers_removed": len(slivers), "edge_sliver_files": slivers} if slivers else {}
     art_stats = {"layout_art_removed": sum(map(len, art.values())), "layout_art_files": art} if art else {}
     if reason:
@@ -416,10 +432,6 @@ def repair(project_root: Path, source_baseline: Path | None = None, reapply: boo
             plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return {**skipped("translated layout repair (images, TOC, page references, headings, "
                           "furniture, titles, navigation)", reason), **sliver_stats, **art_stats}
-    chapters = config["chapters"]
-    for section in chapters.values():
-        section["files"] = normalize_files(section.get("files", {}))
-    leaves = chapter_leaves(chapters)
     style_path = project_root / "style-decisions.json"
     style = json.loads(style_path.read_text(encoding="utf-8")) if style_path.exists() else {}
     base = deployment_base_path(style)
@@ -458,7 +470,7 @@ def repair(project_root: Path, source_baseline: Path | None = None, reapply: boo
             stats["dice_callouts_repaired"] += count
         def clean_image(match: re.Match[str]) -> str:
             filename = Path(match.group(1)).name
-            if filename in keep or filename not in known_images:
+            if (filename in keep and filename not in chapter_classes.get(f"{slug}.md", {})) or filename not in known_images:
                 return match.group(0)
             stats["images_removed"] += 1
             return ""
@@ -504,6 +516,7 @@ def _prepare_staged_source(project_root: Path, source_docs: Path) -> dict[str, i
     for section in config["chapters"].values():
         section["files"] = normalize_files(section.get("files", {}))
     manifest = _image_manifest(project_root, config)
+    chapter_classes = _chapter_image_classes(manifest, chapter_leaves(config["chapters"]), _image_dir(project_root, config))
     source_path = project_root / config.get("source", "")
     pages = extract_pages(source_path.read_text(encoding="utf-8")) if source_path.is_file() else {}
     page_stats = build_page_text_stats(pages, config.get("clean_patterns", []))
@@ -535,7 +548,7 @@ def _prepare_staged_source(project_root: Path, source_docs: Path) -> dict[str, i
             stats["dice_callouts_repaired"] += count
         def clean_image(match: re.Match[str]) -> str:
             filename = Path(match.group(1)).name
-            if filename in keep or filename not in known_images:
+            if (filename in keep and filename not in chapter_classes.get(f"{slug}.md", {})) or filename not in known_images:
                 return match.group(0)
             stats["images_removed"] += 1
             return ""
@@ -606,6 +619,7 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
         if title and not re.search(r"[\u3400-\u9fff]", title):
             issues.append(f"chapters.json: untranslated section label {slug}: {title}")
     manifest = _image_manifest(project_root, config)
+    chapter_classes = _chapter_image_classes(manifest, chapter_leaves(config.get("chapters", {})), _image_dir(project_root, config))
     known_images = {image["filename"] for image in manifest}
     if manifest:
         page_stats = build_page_text_stats(pages, config.get("clean_patterns", []))
@@ -665,7 +679,7 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
                 issues.append(f"{name}: printed furniture or TOC: {p[:60]}")
         for match in IMAGE_RE.finditer(body):
             filename = Path(match.group(1)).name
-            if filename in known_images and filename not in keep:
+            if filename in known_images and (filename not in keep or filename in chapter_classes.get(str(path.relative_to(docs)), {})):
                 issues.append(f"{name}: layout image {filename}")
         for start, _ in find_empty_tables(text):
             issues.append(f"{name}:{start + 1}: empty table")
