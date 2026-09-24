@@ -15,6 +15,8 @@ from functools import lru_cache
 from pathlib import Path
 
 from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, repair_d66_tables, strip_duplicate_title, strip_page_furniture
+from _kedamono_heading_pairs import HEADING_PAIRS
+from _paired_layout import repair_paired_layout
 from generate_nav import deployment_base_path, regenerate
 from split_chapters import build_page_text_stats, extract_pages, group_images_by_page, normalize_files, write_meta_yml
 
@@ -551,6 +553,9 @@ def repair_staged_source(project_root: Path, source_docs: Path) -> dict[str, int
         if revised != original:
             path.write_text(revised, encoding="utf-8")
             stats["files_changed"] += 1
+    source_pages = {f"{('index/index' if slug == 'book-index/index' else slug)}.md": entry["pages"]
+                    for slug, entry in leaves}
+    stats.update(repair_paired_layout(source_docs, project_root / "docs/src/content/docs", pdf, source_pages))
     return dict(stats)
 
 
@@ -588,6 +593,22 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
         title = front_title(text)
         body = split_frontmatter(text)[1]
         name = str(path.relative_to(project_root))
+        if "" in body:
+            issues.append(f"{name}: PDF bullet marker remains in rendered prose")
+        if pdf.name == "Kedamono_Opera.pdf" and pdf.is_file():
+            rel = str(path.relative_to(docs))
+            expected = Counter((level, label.removeprefix("- ")) for _, label, level in HEADING_PAIRS.get(rel, ()))
+            actual = Counter((len(m.group(1)), m.group(2)) for m in re.finditer(r"(?m)^(#{2,6})\s+(.+?)\s*$", body))
+            for heading, count in expected.items():
+                if actual[heading] < count:
+                    issues.append(f"{name}: PDF heading missing: {heading[1]}")
+            if rel == "basic-rules/index.md":
+                for label in ("選擇暗獸", "決定夥群", "分享你的遊玩成果！"):
+                    if not re.search(rf"(?m)^- \*\*{re.escape(label)}[：]?(?:\*\*)", body):
+                        issues.append(f"{name}: overview callout missing: {label}")
+        for line_number, line in enumerate(body.splitlines(), 1):
+            if re.match(r"^#\s+", line):
+                issues.append(f"{name}:{line_number}: body H1 remains")
         entry = leaves_by_path.get(str(path.relative_to(docs)))
         if entry and pdf.is_file():
             catalog = staged_missing_headings(source_baseline, str(path.relative_to(docs)).removesuffix(".md"), corroborated_headings(pdf, pages, tuple(entry["pages"])))
@@ -597,11 +618,13 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
         if title:
             normalized = re.sub(r"\s+", "", title).casefold()
             headings = [(level, re.sub(r"\s+", "", label).casefold())
-                        for level, label in re.findall(r"(?m)^(#{1,2})\s+(.+?)\s*$", body)]
+                        for level, label in re.findall(r"(?m)^(#{1,6})\s+(.+?)\s*$", body)]
             first_line = next((line for line in body.splitlines() if line.strip()), "")
             first_h2 = first_line.startswith("## ") and re.sub(r"\s+", "", first_line[3:]).casefold() == normalized
             if first_h2 or any(level == "#" and label == normalized for level, label in headings):
                 issues.append(f"{name}: body H1/H2 duplicates frontmatter title")
+            if sum(label == normalized for _, label in headings) >= 2:
+                issues.append(f"{name}: repeated body title headings")
         for paragraph in re.split(r"\n\s*\n", body):
             p = paragraph.strip()
             if (re.fullmatch(r"\d{1,3}|[A-Za-z]|第\s*\d+\s*章|(?:第\s*\d+\s*頁[\s　]*)+|章節封面|CHAPTER COVER", p)

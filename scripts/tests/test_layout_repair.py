@@ -14,6 +14,7 @@ from _layout_cleanup import (
     strip_page_furniture,
     unique_placements,
 )
+from _paired_layout import _align_headings, _special, _wingdings_lists
 from repair_layout import (
     format_english_spread_steps,
     format_spread_steps,
@@ -132,3 +133,103 @@ def test_layout_gate_flags_english_navigation_and_raw_artifacts(tmp_path: Path):
     assert any("body H1/H2 duplicates" in issue for issue in issues)
     assert any("printed furniture" in issue for issue in issues)
     assert any("untranslated sidebar label" in issue for issue in issues)
+
+
+def test_layout_gate_flags_repeated_lower_level_page_titles(tmp_path: Path):
+    docs = tmp_path / "docs/src/content/docs/species"
+    docs.mkdir(parents=True)
+    (tmp_path / "chapters.json").write_text('{"chapters":{"species":{"title":"物種"}}}', encoding="utf-8")
+    (docs / "sphinx.md").write_text("---\ntitle: 斯芬克斯\n---\n\n## 斯芬克斯\n\n 故事。\n\n### 斯芬克斯\n", encoding="utf-8")
+    issues = layout_issues(tmp_path)
+    assert any("repeated body title headings" in issue for issue in issues)
+    assert any("PDF bullet marker remains" in issue for issue in issues)
+
+
+def test_paired_heading_recovery_keeps_siblings_and_cards_below_sections():
+    source = ["---", "title: Apocrypha", "---", "## Apocryphal Feats", " Apocryphal Operas",
+              "## Legendary Operas", "###### dark ritual"]
+    target = ["---", "title: 外典", "---", "## 外典特技", "外典歌劇（Apocryphal Operas）",
+              "## 傳說歌劇", "# 黑暗儀式"]
+    _special("on-kedamono/apocrypha.md", source, target)
+    _align_headings("on-kedamono/apocrypha.md", source, target)
+    assert source[4] == "## Apocryphal Operas"
+    assert target[4] == "## 外典歌劇（Apocryphal Operas）"
+    assert source[6] == "### dark ritual" and target[6] == "### 黑暗儀式"
+
+
+def test_legendary_conditions_restore_two_list_items_on_both_sides():
+    source = [" You have at least 1 available Legend  You have your Opera available"]
+    target = ["你至少有 1 個可用的傳說（Legend）。", "你的歌劇也處於可用狀態。"]
+    _special("on-kedamono/apocrypha.md", source, target)
+    assert source[0].splitlines() == ["- You have at least 1 available Legend", "- You have your Opera available"]
+    assert target == ["- 你至少有 1 個可用的傳說（Legend）。", "- 你的歌劇也處於可用狀態。"]
+
+
+def test_overview_spread_uses_stage_headings_and_callout_lists():
+    source = ["## Prelude", "## Choose Kedamono", "", "Players read the Intro.",
+              "## Define the Pack", "", "Discuss the pack.",
+              "## Share Your Play!", "", "Share your work."]
+    target = ["## 序幕", "## 選擇暗獸", "", "玩家閱讀前奏。",
+              "## 決定夥群", "", "討論夥群。",
+              "## 分享你的遊玩成果！", "", "分享作品。"]
+    _special("basic-rules/index.md", source, target)
+    assert "## Prelude" in source and "## 序幕" in target
+    assert "- **Choose Kedamono:** Players read the Intro." in source
+    assert "- **選擇暗獸：** 玩家閱讀前奏。" in target
+    assert "- **分享你的遊玩成果！** 分享作品。" in target
+    assert "## Share Your Play!" not in source
+
+
+def test_character_creation_table_labels_follow_parent_section():
+    source = ["## makinG a kedamono", "## kedamono sPeCies", "## feaTs", "## Sample Ordeal", "## Twist Portents"]
+    target = ["## 創建暗獸", "## 暗獸物種", "## 特技", "## 試煉範例", "## 波折預言"]
+    _align_headings("basic-rules/index.md", source, target)
+    assert source == ["## makinG a kedamono", "### kedamono sPeCies", "### feaTs", "## Sample Ordeal", "### Twist Portents"]
+    assert target == ["## 創建暗獸", "### 暗獸物種", "### 特技", "## 試煉範例", "### 波折預言"]
+
+
+def test_wingdings_list_recovery_keeps_paragraph_boundaries():
+    lines = ["介紹。", "", " 第一項。  第二項。", "", "結語。"]
+    _wingdings_lists(lines)
+    assert lines == ["介紹。", "", "- 第一項。", "- 第二項。", "", "結語。"]
+
+
+def test_pdf_verified_species_heading_is_paired_with_existing_translation():
+    source = [" Fickle Beasts", "", "Fierce cats."]
+    target = ["善變的野獸", "", "凶猛的貓。"]
+    _special("on-kedamono/kedamono-species/sphinx.md", source, target)
+    assert source[0] == "## Fickle Beasts"
+    assert target[0] == "## 善變的野獸"
+
+
+def test_species_legend_subchoices_are_nested_lists_on_both_sides():
+    source = ["- 1. Clear a portent.", "- 2. Mark a portent.", "- • Feat portent", "• Twist portent", "• Random portent"]
+    target = ["- 1. 消除預言。", "- 2. 標記預言。", "- • 特技預言", "• 波折預言", "• 隨機預言"]
+    _special("on-kedamono/kedamono-species/index.md", source, target)
+    assert source == ["1. Clear a portent.", "2. Mark a portent.", "   - Feat portent", "   - Twist portent", "   - Random portent"]
+    assert target == ["1. 消除預言。", "2. 標記預言。", "   - 特技預言", "   - 波折預言", "   - 隨機預言"]
+
+
+def test_pdf_display_callout_stays_prose_and_legend_section_stays_heading():
+    source = [" Your character is an ageless kedamono."]
+    target = ["你的角色是一隻長生不老的暗獸。"]
+    _special("basic-rules/index.md", source, target)
+    assert source == ["**Your character is an ageless kedamono.**"]
+    assert target == ["**你的角色是一隻長生不老的暗獸。**"]
+
+    source = [" Using Your Legend", "### Legend Effects"]
+    target = ["### 使用傳說", "傳說效果"]
+    _special("on-kedamono/kedamono-species/index.md", source, target)
+    assert source == ["### Using Your Legend", "**Legend Effects**"]
+    assert target == ["### 使用傳說", "**傳說效果**"]
+
+
+def test_extracted_table_caption_demotes_on_first_pass():
+    source = [" Ordeal Difficulty", "###### Ordeal Difficulty"]
+    target = [" 試煉難度", "###### 試煉難度（Difficulty）"]
+    _special("on-game-mastering/making-scenarios.md", source, target)
+    assert source == ["### Ordeal Difficulty", "**Ordeal Difficulty**"]
+    assert target == ["### 試煉難度", "**試煉難度（Difficulty）**"]
+    _special("on-game-mastering/making-scenarios.md", source, target)
+    assert source == ["### Ordeal Difficulty", "**Ordeal Difficulty**"]
+    assert target == ["### 試煉難度", "**試煉難度（Difficulty）**"]
