@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -159,7 +160,8 @@ class TestSiteTitleConfig:
         assert update_astro_site_title(TEMPLATE_CONFIG, {}) == TEMPLATE_CONFIG
 
     def test_sync_check_rejects_template_default_title(self):
-        with_base = update_astro_site_base(TEMPLATE_CONFIG, blog_style())
+        default_title = re.sub(r"\ttitle: '.*',\n", "\ttitle: '遊戲規則文件',\n", TEMPLATE_CONFIG, count=1)
+        with_base = update_astro_site_base(default_title, blog_style())
         with pytest.raises(ExportError, match="網站標題"):
             assert_config_synced(with_base, blog_style())
         assert_config_synced(update_astro_site_title(with_base, blog_style()), blog_style())
