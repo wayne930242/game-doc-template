@@ -47,6 +47,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from _image_analysis import (
+    enrich_image_manifest,
     image_dominant_color_ratio,
     image_file_size_key,
     image_visual_key,
@@ -60,6 +61,7 @@ from _layout_cleanup import (
     is_d66_icon,
     is_edge_furniture,
     is_page_ornament,
+    layout_art_classes,
     repair_d66_tables,
     strip_chapter_cover,
     strip_duplicate_title,
@@ -314,7 +316,7 @@ def load_image_manifest(config: dict, project_root: Path) -> tuple[list[dict], P
 
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     return (
-        payload.get("images", []),
+        enrich_image_manifest(payload.get("images", []), manifest_path.parent),
         manifest_path,
         policy,
     )
@@ -345,6 +347,7 @@ def group_images_by_page(
     )
 
     images = unique_placements(images)
+    layout_art = layout_art_classes(images)
     dice_pages = d66_pages(images)
     pair_pages = d66_pair_pages(images)
     ornament_counts = Counter(
@@ -365,6 +368,9 @@ def group_images_by_page(
     page_images: dict[int, list[dict]] = defaultdict(list)
     skipped = 0
     for image in images:
+        if image["filename"] in layout_art:
+            skipped += 1
+            continue
         ornament_key = (image.get("visual_hash"), round(float(image.get("width") or 0)), round(float(image.get("height") or 0)))
         if is_page_ornament(image, ornament_counts[ornament_key]) or is_edge_furniture(image) or (
             int(image["page"]) in dice_pages and is_d66_icon(image)

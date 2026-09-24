@@ -15,7 +15,8 @@ from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 
-from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, is_edge_furniture, repair_d66_tables, strip_duplicate_title, strip_page_furniture
+from _image_analysis import enrich_image_manifest
+from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, is_edge_furniture, layout_art_classes, repair_d66_tables, strip_duplicate_title, strip_page_furniture
 from _markdown_utils import find_empty_tables
 from _paired_layout import _format_translated_spread, _pdf_roles, _tree_digest, add_reviewed_decisions, derive_layout_plan, match_chapter_paths, recorded_repair, repair_paired_layout
 from generate_nav import deployment_base_path, regenerate
@@ -312,7 +313,9 @@ def staged_missing_headings(source_baseline: Path | None, slug: str, catalog: li
 def _image_manifest(project_root: Path, config: dict) -> list[dict]:
     source = Path(config.get("source", ""))
     path = project_root / "data/markdown/images" / source.stem.removesuffix("_pages") / "manifest.json"
-    return json.loads(path.read_text(encoding="utf-8")).get("images", []) if path.exists() else []
+    if not path.exists():
+        return []
+    return enrich_image_manifest(json.loads(path.read_text(encoding="utf-8")).get("images", []), path.parent)
 
 
 def annotate_pair_pages(body: str, pairs: dict[int, int]) -> tuple[str, int]:
@@ -371,6 +374,25 @@ def remove_edge_slivers(docs: Path, manifest: list[dict]) -> list[str]:
     return removed
 
 
+def remove_classified_art(docs: Path, manifest: list[dict]) -> dict[str, list[str]]:
+    """Remove individual image lines while preserving edited chapter prose."""
+    classes = layout_art_classes(manifest)
+    removed: dict[str, list[str]] = {}
+    for path in sorted(docs.rglob("*.md")):
+        original = path.read_text(encoding="utf-8")
+        def drop(match: re.Match[str]) -> str:
+            filename = Path(match.group(1)).name
+            kind = classes.get(filename)
+            if kind is None:
+                return match.group(0)
+            removed.setdefault(kind, []).append(f"{path.relative_to(docs)}: {filename}")
+            return "\0"
+        marked = IMAGE_RE.sub(drop, original)
+        if marked != original:
+            path.write_text(re.sub(r"\n*\0\n*", "\n\n", marked).rstrip("\n") + "\n", encoding="utf-8")
+    return removed
+
+
 def skipped(step: str, reason: str) -> dict[str, object]:
     return {"already_applied": 1, "skipped": step, "reason": reason}
 
@@ -383,15 +405,17 @@ def repair(project_root: Path, source_baseline: Path | None = None, reapply: boo
     manifest = _image_manifest(project_root, config)
     reason = None if reapply else recorded_repair(plan_path, docs)
     slivers = remove_edge_slivers(docs, manifest)
+    art = remove_classified_art(docs, manifest)
     sliver_stats = {"edge_slivers_removed": len(slivers), "edge_sliver_files": slivers} if slivers else {}
+    art_stats = {"layout_art_removed": sum(map(len, art.values())), "layout_art_files": art} if art else {}
     if reason:
-        if slivers:
-            # Record the sliver removal so the next run reports only later edits.
+        if slivers or art:
+            # Record line-local image removal so the next run reports later edits.
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
             plan["applied"]["target_sha256"] = _tree_digest(docs)
             plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return {**skipped("translated layout repair (images, TOC, page references, headings, "
-                          "furniture, titles, navigation)", reason), **sliver_stats}
+                          "furniture, titles, navigation)", reason), **sliver_stats, **art_stats}
     chapters = config["chapters"]
     for section in chapters.values():
         section["files"] = normalize_files(section.get("files", {}))
@@ -466,7 +490,7 @@ def repair(project_root: Path, source_baseline: Path | None = None, reapply: boo
     _update_group_titles(project_root, chapters, leaves, toc_labels)
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     regenerate(project_root)
-    return {**stats, **sliver_stats}
+    return {**stats, **sliver_stats, **art_stats}
 
 
 def _prepare_staged_source(project_root: Path, source_docs: Path) -> dict[str, int]:

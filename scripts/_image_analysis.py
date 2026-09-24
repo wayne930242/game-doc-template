@@ -3,7 +3,10 @@
 提供圖片視覺指紋、背景判定與去重用的存取函式。
 """
 
+import hashlib
+import math
 from collections import Counter
+from pathlib import Path
 
 try:
     import pymupdf
@@ -84,6 +87,23 @@ def analyze_image_bytes(image_bytes: bytes) -> dict[str, object]:
             grayscale = int(0.299 * r + 0.587 * g + 0.114 * b)
             grayscale_samples.append(grayscale)
 
+    # The same 64x64 grid captures broad paper grain and black/white masks
+    # without tying thresholds to the PDF image's native resolution.
+    detail_axis = 64
+    detail = []
+    for grid_y in range(detail_axis):
+        y = min(height - 1, int((grid_y + 0.5) * height / detail_axis))
+        for grid_x in range(detail_axis):
+            x = min(width - 1, int((grid_x + 0.5) * width / detail_axis))
+            r, g, b = sample_rgb(x, y)
+            detail.append((r + g + b) / 3)
+    mean = sum(detail) / len(detail)
+    deviation = math.sqrt(sum((value - mean) ** 2 for value in detail) / len(detail))
+    horizontal_edges = sum(
+        abs(detail[index] - detail[index + 1]) > 25
+        for index in range(len(detail)) if index % detail_axis < detail_axis - 1
+    )
+
     total_samples = sum(color_counts.values())
     dominant_color_ratio = None
     if total_samples:
@@ -93,7 +113,26 @@ def analyze_image_bytes(image_bytes: bytes) -> dict[str, object]:
         "visual_hash": compute_visual_hash(grayscale_samples),
         "dominant_color_ratio": dominant_color_ratio,
         "sampled_pixel_count": total_samples,
+        "pixel_sha256": hashlib.sha256(
+            f"{width}x{height}x{channel_count}:".encode() + samples
+        ).hexdigest(),
+        "gray_mean": round(mean, 2),
+        "gray_std": round(deviation, 2),
+        "edge_density": round(horizontal_edges / len(detail), 4),
+        "white_ratio": round(sum(value >= 245 for value in detail) / len(detail), 4),
+        "black_ratio": round(sum(value <= 20 for value in detail) / len(detail), 4),
     }
+
+
+def enrich_image_manifest(images: list[dict], image_dir: Path) -> list[dict]:
+    """Add pixel evidence to manifests written by earlier template versions."""
+    for image in images:
+        if image.get("pixel_sha256") and image.get("gray_mean") is not None:
+            continue
+        path = image_dir / image["filename"]
+        if path.is_file():
+            image.update(analyze_image_bytes(path.read_bytes()))
+    return images
 
 
 def image_file_size_key(image: dict) -> int | None:

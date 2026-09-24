@@ -31,6 +31,7 @@ from _epub_lib import (
     should_print_progress,
 )
 from _image_analysis import WEB_IMAGE_EXTENSIONS, analyze_image_bytes, pixmap_to_png
+from _layout_cleanup import layout_art_classes
 from _layout_lib import (
     detect_layout_profile,
     extract_page_text_pymupdf,
@@ -860,10 +861,21 @@ def extract_images(pdf_path: Path, output_dir: Path) -> list[dict]:
                         "visual_hash": analysis.get("visual_hash"),
                         "dominant_color_ratio": analysis.get("dominant_color_ratio"),
                         "sampled_pixel_count": analysis.get("sampled_pixel_count"),
+                        "pixel_sha256": analysis.get("pixel_sha256"),
+                        "gray_mean": analysis.get("gray_mean"),
+                        "gray_std": analysis.get("gray_std"),
+                        "edge_density": analysis.get("edge_density"),
+                        "white_ratio": analysis.get("white_ratio"),
+                        "black_ratio": analysis.get("black_ratio"),
                     }
                 )
 
     doc.close()
+
+    art_classes = layout_art_classes(saved_images)
+    for image in saved_images:
+        if image["filename"] in art_classes:
+            image["layout_art_class"] = art_classes[image["filename"]]
 
     manifest_path = images_dir / "manifest.json"
     manifest = {

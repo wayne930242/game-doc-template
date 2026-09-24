@@ -13,6 +13,7 @@ from _layout_cleanup import (
     is_edge_sliver,
     is_edge_tab,
     is_page_ornament,
+    layout_art_classes,
     repair_d66_tables,
     strip_chapter_cover,
     strip_chapter_covers,
@@ -450,6 +451,64 @@ def test_repair_drops_edge_tabs_on_an_edited_project(tmp_path: Path):
     text = chapter.read_text(encoding="utf-8")
     assert "# 規則\n\n正文。" in text and "page001_tab.png" not in text and "page001_symbol.png" in text
     assert not any("page001_tab.png" in issue for issue in layout_issues(project))
+
+
+def _page_art_samples() -> list[dict]:
+    return json.loads((Path(__file__).parent / "fixtures/kedamono_page_art.json").read_text())
+
+
+def test_real_page_art_samples_separate_print_art_from_illustrations():
+    images = _page_art_samples()
+    classes = layout_art_classes(images)
+    by_prefix = {image["filename"].split("_occ")[0]: image["filename"] for image in images
+                 if not image["filename"].startswith("page172_img03")}
+    for prefix in ("page019_img03", "page073_img10", "page073_img11", "page077_img00",
+                   "page094_img03", "page094_img04", "page170_img00", "page172_img00"):
+        assert classes[by_prefix[prefix]] == "paper_texture", prefix
+    for prefix in ("page018_img00", "page094_img00", "page206_img00"):
+        assert classes[by_prefix[prefix]] == "ink_mask", prefix
+    for prefix in ("page002_img01", "page003_img03", "page056_img00", "page162_img00",
+                   "page218_img00", "page236_img02", "page256_img00", "page262_img01"):
+        assert classes[by_prefix[prefix]] == "repeated_art", prefix
+    assert sum(kind == "repeated_flourish" for kind in classes.values()) == 2
+    for prefix in ("page001_img03", "page018_img01", "page029_img00", "page094_img01",
+                   "page094_img02", "page260_img01", "page261_img00"):
+        assert by_prefix[prefix] not in classes, prefix
+
+
+def test_pixel_art_line_cleanup_preserves_edited_prose_and_check_reports_residue(tmp_path: Path):
+    project = _sliver_project(tmp_path)
+    images = _page_art_samples()
+    manifest = project / "data/markdown/images/Book/manifest.json"
+    manifest.write_text(json.dumps({"images": images}), encoding="utf-8")
+    docs = project / "docs/src/content/docs"
+    chapter = docs / "rules/index.md"
+    by_prefix = {image["filename"].split("_occ")[0]: image["filename"] for image in images
+                 if not image["filename"].startswith("page172_img03")}
+    lines = ["---", "title: 規則", "---", "", "編輯後的正文。", ""]
+    for prefix in ("page001_img03", "page002_img01", "page094_img00", "page094_img01",
+                   "page094_img03", "page172_img00", "page260_img01"):
+        lines.extend((f"![](../../../assets/{by_prefix[prefix]})", ""))
+    for image in images:
+        if image["filename"].startswith("page172_img03"):
+            lines.extend((f"![](../../../assets/{image['filename']})", ""))
+    chapter.write_text("\n".join(lines), encoding="utf-8")
+    plan = project / "data/layout-repair.json"
+    plan.write_text(json.dumps({"applied": {"source_sha256": "s", "target_sha256": "prior"}}), encoding="utf-8")
+    pending = layout_issues(project)
+    for prefix in ("page002_img01", "page094_img00", "page094_img03",
+                   "page172_img00", "page172_img03"):
+        assert any(prefix in issue for issue in pending), prefix
+    result = repair(project)
+    assert result["already_applied"] == 1
+    assert result["layout_art_removed"] == 6
+    assert set(result["layout_art_files"]) == {"paper_texture", "ink_mask", "repeated_art", "repeated_flourish"}
+    text = chapter.read_text(encoding="utf-8")
+    assert "編輯後的正文。" in text
+    for prefix in ("page001_img03", "page094_img01", "page260_img01"):
+        assert by_prefix[prefix] in text
+    assert not any("layout image" in issue for issue in layout_issues(project))
+    assert "layout_art_removed" not in repair(project)
 
 
 COVER_PAGE = "Chapter 2\n\n###### on The World\n\nCHAPTER COVER"

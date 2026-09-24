@@ -134,6 +134,72 @@ def is_page_ornament(image: dict, repeat_count: int) -> bool:
     return footer or side_ribbon or heading_backdrop or bottom_flourish or divider_flourish or callout_ring
 
 
+def layout_art_classes(images: list[dict]) -> dict[str, str]:
+    """Classify non-content page art using decoded pixels and PDF placement.
+
+    Large pale, low-edge images are paper; near-binary black/white images are
+    clipping masks. The recorded image fixtures include both classes and dark,
+    high-detail full-page illustrations that remain content.
+    """
+    images = unique_placements(images)
+    classified: dict[str, str] = {}
+    by_digest: dict[str, list[dict]] = {}
+    for image in images:
+        filename = image["filename"]
+        coverage = float(image.get("coverage_ratio") or 0)
+        mean = image.get("gray_mean")
+        deviation = image.get("gray_std")
+        edges = image.get("edge_density")
+        if coverage >= 0.35 and all(value is not None for value in (mean, deviation, edges)):
+            if float(mean) >= 180 and float(deviation) <= 55 and float(edges) <= 0.07:
+                classified[filename] = "paper_texture"
+            elif (coverage >= 0.45 and float(deviation) >= 90 and float(edges) <= 0.12
+                  and float(image.get("white_ratio") or 0) >= 0.15
+                  and float(image.get("black_ratio") or 0) >= 0.4
+                  and float(image.get("white_ratio") or 0) + float(image.get("black_ratio") or 0) >= 0.8):
+                classified[filename] = "ink_mask"
+        if image.get("pixel_sha256"):
+            by_digest.setdefault(str(image["pixel_sha256"]), []).append(image)
+
+    # A pair of wide, shallow marks on the same page decorates the printed page.
+    for group in by_digest.values():
+        pages = Counter(int(image["page"]) for image in group)
+        for image in group:
+            pw, ph = float(image.get("page_width") or 0), float(image.get("page_height") or 0)
+            width, height = float(image.get("width") or 0), float(image.get("height") or 0)
+            if (pages[int(image["page"])] >= 2 and pw and ph and
+                    width <= pw * 0.36 and height <= ph * 0.07 and
+                    width / max(height, 1) >= 3.4):
+                classified[image["filename"]] = "repeated_flourish"
+
+    # Full-page illustrations can recur with a new XObject or a slightly
+    # different raster crop. Preserve the first placement as the book image.
+    large = sorted((image for image in images
+                    if image["filename"] not in classified
+                    and float(image.get("coverage_ratio") or 0) >= 0.5
+                    and image.get("visual_hash") and image.get("gray_mean") is not None),
+                   key=lambda image: (int(image["page"]), image["filename"]))
+    firsts: list[dict] = []
+    for image in large:
+        match = next((first for first in firsts if _same_large_art(first, image)), None)
+        if match is None:
+            firsts.append(image)
+        else:
+            classified[image["filename"]] = "repeated_art"
+    return classified
+
+
+def _same_large_art(first: dict, image: dict) -> bool:
+    if first.get("pixel_sha256") and first["pixel_sha256"] == image.get("pixel_sha256"):
+        return True
+    width_ratio = float(first.get("width") or 0) / max(float(first.get("height") or 0), 1)
+    other_ratio = float(image.get("width") or 0) / max(float(image.get("height") or 0), 1)
+    return (abs(width_ratio - other_ratio) <= 0.03
+            and abs(float(first["gray_mean"]) - float(image["gray_mean"])) <= 5
+            and abs(float(first["gray_std"]) - float(image["gray_std"])) <= 5
+            and (int(str(first["visual_hash"]), 16) ^ int(str(image["visual_hash"]), 16)).bit_count() <= 10)
+
+
 _FURNITURE = re.compile(
     r"(?m)(?<=\n\n)(?:\d{1,3}|[A-Za-z]|第\s*\d+\s*章|(?:第\s*\d+\s*頁[\s　]*)+|章節封面|CHAPTER COVER)(?=\n\n|\n?$)"
 )
