@@ -17,10 +17,12 @@ from _layout_cleanup import (
     unique_placements,
 )
 from split_chapters import group_images_by_page
-from _paired_layout import PdfRole, _align_short_label_lists, _align_unpaired_h1, _anchors, _corroborated_display_candidates, _format_translated_spread, _pair_candidates, _position, _restore_paired_glyph_lists, _set_label, _source_candidates, _tree_digest, add_reviewed_decisions, layout_plan_applied, normal
+from _paired_layout import PdfRole, _align_short_label_lists, _align_unpaired_h1, _anchors, _corroborated_display_candidates, _format_translated_spread, _pair_candidates, _position, _restore_paired_glyph_lists, _set_label, _source_candidates, _tree_digest, add_reviewed_decisions, normal, recorded_repair
 from repair_layout import (
     layout_issues,
+    main,
     repair,
+    repair_staged_source,
     recover_pdf_headings,
     repair_english_toc,
     repair_printed_refs,
@@ -206,22 +208,22 @@ def test_paired_bullet_recovery_preserves_paragraph_boundaries():
     assert target == ["介紹。", "", "- 第一項。", "", "- 第二項。", "", "結語。"]
 
 
-def test_applied_layout_plan_refuses_changed_content(tmp_path: Path):
+def test_recorded_repair_marks_the_book_repaired_even_after_edits(tmp_path: Path):
     source, target = tmp_path / "source", tmp_path / "target"
     source.mkdir(); target.mkdir()
     (source / "chapter.md").write_text("## Rule\n", encoding="utf-8")
     (target / "chapter.md").write_text("## 規則\n", encoding="utf-8")
     plan = tmp_path / "layout-repair.json"
+    assert recorded_repair(plan, target, source) is None
+    plan.write_text(json.dumps({"chapters": {}}), encoding="utf-8")
+    assert recorded_repair(plan, target, source) is None
     plan.write_text(json.dumps({"applied": {"source_sha256": _tree_digest(source),
                                              "target_sha256": _tree_digest(target)}}), encoding="utf-8")
-    assert layout_plan_applied(plan, source, target)
+    assert "unchanged" in recorded_repair(plan, target, source)
     (target / "chapter.md").write_text("## 新規則\n", encoding="utf-8")
-    try:
-        layout_plan_applied(plan, source, target)
-    except ValueError as error:
-        assert "derive a new PDF layout plan" in str(error)
-    else:
-        raise AssertionError("changed content must require a fresh plan")
+    reason = recorded_repair(plan, target, source)
+    assert "translated Markdown changed" in reason and "--reapply" in reason
+    assert "staged English source" not in reason
 
 
 def test_text_pair_fixes_orphan_label_and_prose_h1_without_changing_words():
@@ -329,10 +331,72 @@ def test_repair_drops_edge_slivers_after_paired_repair_was_applied(tmp_path: Pat
     plan_path.write_text(json.dumps({"applied": {"source_sha256": "s", "target_sha256": _tree_digest(docs)}}),
                          encoding="utf-8")
     result = repair(project)
-    assert result == {"already_applied": 1, "edge_slivers_removed": 1,
-                      "edge_sliver_files": ["rules/index.md: page001_sliver.png"]}
+    assert result["already_applied"] == 1 and "unchanged" in result["reason"]
+    assert result["edge_slivers_removed"] == 1
+    assert result["edge_sliver_files"] == ["rules/index.md: page001_sliver.png"]
     text = (docs / "rules/index.md").read_text(encoding="utf-8")
     assert "page001_sliver.png" not in text and "page001_symbol.png" in text
     assert "正文。\n\n![](../../../assets/page001_symbol.png)" in text
     assert json.loads(plan_path.read_text(encoding="utf-8"))["applied"]["target_sha256"] == _tree_digest(docs)
-    assert repair(project) == {"already_applied": 1}
+    assert "edge_slivers_removed" not in repair(project)
+
+
+def _edited_after_repair(tmp_path: Path) -> Path:
+    """A repaired project whose chapter later gained a hand-written body title."""
+    project = _sliver_project(tmp_path)
+    docs = project / "docs/src/content/docs"
+    (project / "data/layout-repair.json").write_text(json.dumps(
+        {"applied": {"source_sha256": "s", "target_sha256": _tree_digest(docs)}}), encoding="utf-8")
+    chapter = docs / "rules/index.md"
+    chapter.write_text(chapter.read_text(encoding="utf-8").replace("正文。", "# 規則\n\n正文。"), encoding="utf-8")
+    return project
+
+
+def test_first_time_repair_runs_the_full_transform(tmp_path: Path):
+    project = _sliver_project(tmp_path)
+    chapter = project / "docs/src/content/docs/rules/index.md"
+    chapter.write_text(chapter.read_text(encoding="utf-8").replace("正文。", "# 規則\n\n正文。"), encoding="utf-8")
+    result = repair(project)
+    assert "skipped" not in result
+    assert result["duplicate_titles_removed"] and result["edge_slivers_removed"] == 1
+    assert "# 規則" not in chapter.read_text(encoding="utf-8")
+
+
+def test_repair_keeps_edits_made_after_the_paired_repair(tmp_path: Path):
+    project = _edited_after_repair(tmp_path)
+    docs = project / "docs/src/content/docs"
+    result = repair(project)
+    assert result["skipped"].startswith("translated layout repair")
+    assert "translated Markdown changed" in result["reason"] and "--reapply" in result["reason"]
+    assert result["edge_sliver_files"] == ["rules/index.md: page001_sliver.png"]
+    text = (docs / "rules/index.md").read_text(encoding="utf-8")
+    assert "# 規則\n\n正文。" in text and "page001_sliver.png" not in text
+    assert not (docs / "rules/_meta.yml").exists()
+    before = text
+    second = repair(project)
+    assert "unchanged" in second["reason"] and "edge_slivers_removed" not in second
+    assert (docs / "rules/index.md").read_text(encoding="utf-8") == before
+
+
+def test_paired_steps_skip_edited_books_and_leave_files_alone(tmp_path: Path, monkeypatch, capsys):
+    project = _edited_after_repair(tmp_path)
+    source = tmp_path / "source"
+    (source / "rules").mkdir(parents=True)
+    (source / "rules/index.md").write_text("## Rules\n", encoding="utf-8")
+    plan_before = (project / "data/layout-repair.json").read_text(encoding="utf-8")
+    result = repair_staged_source(project, source)
+    assert result["skipped"] == "paired layout repair"
+    assert "translated Markdown and staged English source changed" in result["reason"]
+    monkeypatch.setattr("sys.argv", ["repair_layout.py", "--project-root", str(project),
+                                     "--staged-source", str(source), "--derive-layout-plan"])
+    assert main() == 0
+    assert json.loads(capsys.readouterr().out)["skipped"] == "layout plan derivation"
+    assert (project / "data/layout-repair.json").read_text(encoding="utf-8") == plan_before
+    assert (source / "rules/index.md").read_text(encoding="utf-8") == "## Rules\n"
+
+
+def test_reapply_reruns_the_full_repair_over_later_edits(tmp_path: Path):
+    project = _edited_after_repair(tmp_path)
+    result = repair(project, reapply=True)
+    assert "skipped" not in result and result["duplicate_titles_removed"]
+    assert "# 規則" not in (project / "docs/src/content/docs/rules/index.md").read_text(encoding="utf-8")

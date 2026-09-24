@@ -2,7 +2,8 @@
 """Repair PDF layout artifacts in an already translated Starlight project.
 
 Run after syncing template scripts into the project. The command preserves prose,
-updates the translated chapter map, and is safe to repeat.
+updates the translated chapter map, and is safe to repeat: once the paired repair
+is recorded, reruns only apply line-local cleanups unless --reapply is given.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pathlib import Path
 
 from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, is_edge_sliver, repair_d66_tables, strip_duplicate_title, strip_page_furniture
 from _markdown_utils import find_empty_tables
-from _paired_layout import _format_translated_spread, _pdf_roles, _tree_digest, add_reviewed_decisions, derive_layout_plan, layout_plan_applied, match_chapter_paths, repair_paired_layout
+from _paired_layout import _format_translated_spread, _pdf_roles, _tree_digest, add_reviewed_decisions, derive_layout_plan, match_chapter_paths, recorded_repair, repair_paired_layout
 from generate_nav import deployment_base_path, regenerate
 from split_chapters import build_page_text_stats, extract_pages, group_images_by_page, normalize_files, write_meta_yml
 from validate_translation_structure import compare_structure
@@ -370,24 +371,27 @@ def remove_edge_slivers(docs: Path, manifest: list[dict]) -> list[str]:
     return removed
 
 
-def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str, object]:
+def skipped(step: str, reason: str) -> dict[str, object]:
+    return {"already_applied": 1, "skipped": step, "reason": reason}
+
+
+def repair(project_root: Path, source_baseline: Path | None = None, reapply: bool = False) -> dict[str, object]:
     docs = project_root / "docs/src/content/docs"
     plan_path = project_root / "data/layout-repair.json"
     config_path = project_root / "chapters.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     manifest = _image_manifest(project_root, config)
-    digest_before = _tree_digest(docs)
+    reason = None if reapply else recorded_repair(plan_path, docs)
     slivers = remove_edge_slivers(docs, manifest)
     sliver_stats = {"edge_slivers_removed": len(slivers), "edge_sliver_files": slivers} if slivers else {}
-    if plan_path.is_file():
-        plan = json.loads(plan_path.read_text(encoding="utf-8"))
-        applied = plan.get("applied", {})
-        if applied.get("target_sha256") == digest_before:
-            if slivers:
-                # Sliver removal is the only change since the paired repair was applied.
-                applied["target_sha256"] = _tree_digest(docs)
-                plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            return {"already_applied": 1, **sliver_stats}
+    if reason:
+        if slivers:
+            # Record the sliver removal so the next run reports only later edits.
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["applied"]["target_sha256"] = _tree_digest(docs)
+            plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return {**skipped("translated layout repair (images, TOC, page references, headings, "
+                          "furniture, titles, navigation)", reason), **sliver_stats}
     chapters = config["chapters"]
     for section in chapters.values():
         section["files"] = normalize_files(section.get("files", {}))
@@ -531,10 +535,11 @@ def _prepare_staged_source(project_root: Path, source_docs: Path) -> dict[str, i
     return dict(stats)
 
 
-def repair_staged_source(project_root: Path, source_docs: Path) -> dict[str, int]:
+def repair_staged_source(project_root: Path, source_docs: Path, reapply: bool = False) -> dict[str, object]:
     target_docs = project_root / "docs/src/content/docs"
-    if layout_plan_applied(project_root / "data/layout-repair.json", source_docs, target_docs):
-        return {"already_applied": 1}
+    reason = None if reapply else recorded_repair(project_root / "data/layout-repair.json", target_docs, source_docs)
+    if reason:
+        return skipped("paired layout repair", reason)
     stats = Counter(_prepare_staged_source(project_root, source_docs))
     config = json.loads((project_root / "chapters.json").read_text(encoding="utf-8"))
     for section in config["chapters"].values():
@@ -644,6 +649,8 @@ def main() -> int:
     parser.add_argument("--structure-report", action="store_true", help="Report paired chapter structure findings")
     parser.add_argument("--reviewed-decisions", type=Path, help="Apply individually PDF-checked residual decisions")
     parser.add_argument("--source-baseline", type=Path, help="Read-only staging tree used to corroborate lost headings")
+    parser.add_argument("--reapply", action="store_true",
+                        help="Rerun the full repair after a recorded paired repair; overwrites later Markdown edits")
     args = parser.parse_args()
     project_root = args.project_root.resolve()
     if args.check:
@@ -685,12 +692,11 @@ def main() -> int:
                  for slug, entry in chapter_leaves(config["chapters"])}
         pdf = project_root / "data/pdfs" / (Path(config["source"]).stem.removesuffix("_pages") + ".pdf")
         plan = project_root / "data/layout-repair.json"
-        try:
-            if layout_plan_applied(plan, args.staged_source.resolve(), project_root / "docs/src/content/docs"):
-                print(json.dumps({"already_applied": 1}, ensure_ascii=False))
-                return 0
-        except ValueError:
-            pass  # Updated synced content requires a fresh PDF-backed plan.
+        reason = None if args.reapply else recorded_repair(plan, project_root / "docs/src/content/docs",
+                                                           args.staged_source.resolve())
+        if reason:
+            print(json.dumps(skipped("layout plan derivation", reason), ensure_ascii=False, indent=2))
+            return 0
         prepared = _prepare_staged_source(project_root, args.staged_source.resolve())
         derived = derive_layout_plan(args.staged_source.resolve(), project_root / "docs/src/content/docs",
                                      pdf, pages, project_root / "glossary.json", plan)
@@ -699,9 +705,9 @@ def main() -> int:
         print(json.dumps(stats, ensure_ascii=False, indent=2))
         return 0
     if args.staged_source:
-        print(json.dumps(repair_staged_source(project_root, args.staged_source.resolve()), ensure_ascii=False, indent=2))
+        print(json.dumps(repair_staged_source(project_root, args.staged_source.resolve(), args.reapply), ensure_ascii=False, indent=2))
         return 0
-    print(json.dumps(repair(project_root, args.source_baseline), ensure_ascii=False, indent=2))
+    print(json.dumps(repair(project_root, args.source_baseline, args.reapply), ensure_ascii=False, indent=2))
     return 0
 
 

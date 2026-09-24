@@ -52,17 +52,24 @@ def _tree_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def layout_plan_applied(plan_path: Path, source_docs: Path, target_docs: Path) -> bool:
+def recorded_repair(plan_path: Path, target_docs: Path, source_docs: Path | None = None) -> str | None:
+    """Return why a recorded paired repair is skipped, or None when none was applied.
+
+    The record alone marks the book as repaired. Markdown that changed since then
+    holds deliberate edits, which rerunning the paired transform would overwrite.
+    """
     if not plan_path.is_file():
-        return False
+        return None
     applied = json.loads(plan_path.read_text(encoding="utf-8")).get("applied")
     if not applied:
-        return False
-    current = {"source_sha256": _tree_digest(source_docs),
-               "target_sha256": _tree_digest(target_docs)}
-    if applied != current:
-        raise ValueError("layout inputs changed after repair; derive a new PDF layout plan")
-    return True
+        return None
+    changed = [name for name, key, root in (("translated Markdown", "target_sha256", target_docs),
+                                            ("staged English source", "source_sha256", source_docs))
+               if root is not None and applied.get(key) != _tree_digest(root)]
+    if not changed:
+        return "paired layout repair already applied; content unchanged since"
+    return (f"{' and '.join(changed)} changed since the recorded paired layout repair; "
+            "kept as is. Pass --reapply to redo the repair and overwrite those edits")
 
 
 def _structural_marker(line: str) -> str:
