@@ -11,6 +11,7 @@ from extract_pdf import (
     build_image_filename,
     build_output_stem,
     clean_artifact_headings,
+    clean_empty_tables,
     clean_list_continuations,
     clean_opendataloader_temp_image_links,
     clean_paragraph_continuations,
@@ -498,6 +499,21 @@ class TestCleanArtifactHeadings:
     def test_missing_file_is_skipped(self, tmp_path):
         missing = tmp_path / "missing.md"
         clean_artifact_headings([missing])  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# clean_empty_tables
+# ---------------------------------------------------------------------------
+
+
+class TestCleanEmptyTables:
+    def test_removes_blank_form_boxes_and_keeps_filled_tables(self, tmp_path):
+        target = tmp_path / "book_pages.md"
+        target.write_text("<!-- PAGE 1 -->\n\nTick the box.\n\n| |\n|---|\n\n|A|B|\n|---|---|\n", encoding="utf-8")
+
+        clean_empty_tables([target])
+
+        assert target.read_text(encoding="utf-8") == "<!-- PAGE 1 -->\n\nTick the box.\n\n|A|B|\n|---|---|\n"
 
 
 # ---------------------------------------------------------------------------

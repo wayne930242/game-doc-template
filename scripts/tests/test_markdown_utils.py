@@ -12,6 +12,7 @@ from _markdown_utils import (
     convert_symbol_glyph_ornaments,
     count_page_text_tokens,
     extract_markdown_image_targets,
+    find_empty_tables,
     find_glyph_block_starts,
     find_list_continuation_items,
     find_paragraph_continuation_breaks,
@@ -22,6 +23,7 @@ from _markdown_utils import (
     merge_paragraph_continuations,
     split_markdown_sections,
     strip_artifact_headings,
+    strip_empty_tables,
     strip_markdown_images,
     yaml_safe,
 )
@@ -960,3 +962,31 @@ def test_yaml_safe_plain_ascii_untouched():
 
 def test_yaml_safe_escapes_quotes_and_backslash():
     assert yaml_safe('a "b" \\c:') == '"a \\"b\\" \\\\c:"'
+
+
+# ---------------------------------------------------------------------------
+# Empty tables
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyTables:
+    FORM = "Mark a portent.\n\n| |\n|---|\n\n| | |\n|:--|--:|\n| | |\n\nOPERA"
+
+    def test_finds_tables_whose_cells_are_all_blank(self):
+        assert find_empty_tables(self.FORM) == [(2, 4), (5, 8)]
+
+    def test_table_with_any_text_cell_is_kept(self):
+        text = "|Rank C|1D| |\n|---|---|---|\n\n| |\n|---|\n|note|"
+        assert find_empty_tables(text) == []
+
+    def test_pipe_line_without_delimiter_is_not_a_table(self):
+        assert find_empty_tables("| |\n| |") == []
+
+    def test_strip_removes_empty_tables_and_their_blank_line(self):
+        cleaned, count = strip_empty_tables(self.FORM)
+        assert count == 2
+        assert cleaned == "Mark a portent.\n\nOPERA"
+
+    def test_strip_leaves_other_text_untouched(self):
+        text = "|A|B|\n|---|---|\n|1|2|\n"
+        assert strip_empty_tables(text) == (text, 0)

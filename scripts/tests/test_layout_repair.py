@@ -9,15 +9,18 @@ from _layout_cleanup import (
     annotate_d66_pair_headings,
     d66_pair_pages,
     d66_pages,
+    is_edge_sliver,
     is_page_ornament,
     repair_d66_tables,
     strip_duplicate_title,
     strip_page_furniture,
     unique_placements,
 )
+from split_chapters import group_images_by_page
 from _paired_layout import PdfRole, _align_short_label_lists, _align_unpaired_h1, _anchors, _corroborated_display_candidates, _format_translated_spread, _pair_candidates, _position, _restore_paired_glyph_lists, _set_label, _source_candidates, _tree_digest, add_reviewed_decisions, layout_plan_applied, normal
 from repair_layout import (
     layout_issues,
+    repair,
     recover_pdf_headings,
     repair_english_toc,
     repair_printed_refs,
@@ -249,3 +252,87 @@ def test_review_decisions_accept_only_explicit_residual_lines(tmp_path: Path):
     assert (target / "chapter.md").read_text(encoding="utf-8") == "## 章節\n\nExtra\n"
     record = json.loads(plan_path.read_text(encoding="utf-8"))["reviewed"]["target"]["chapter.md"][0]
     assert record["pdf_page"] == 7 and record["reason"].startswith("The PDF")
+
+
+PAGE = {"page_width": 419.53, "page_height": 595.28}
+# Published bleed/frame strips: (x, y, width, height) in PDF points.
+EDGE_SLIVERS = [
+    (-1.3, -1.5, 1.3, 532.7), (-1.2, -1.5, 1.9, 407.8), (-1.1, 40.9, 2.2, 307.9),
+    (-1.1, -1.1, 2.3, 108.0), (-1.1, -1.0, 2.3, 87.0), (-1.4, -1.1, 2.5, 370.5),
+    (-1.1, 24.4, 2.6, 312.2), (-1.1, 57.5, 3.7, 278.1), (-1.2, -1.1, 4.0, 108.0),
+    (-1.3, -1.1, 4.4, 398.6), (-1.4, -1.6, 4.4, 373.6), (-1.4, -1.3, 4.4, 342.5),
+    # Borderline: a 21 pt crop of spread art bleeding past the gutter (4.9% wide, 13.7:1).
+    (-1.1, -1.1, 20.7, 283.7),
+]
+# Real small art: inline symbols, in-page rules, edge tabs, and ordinary illustrations.
+KEPT_ART = [
+    (194.2, 243.2, 8.8, 8.8), (170.0, 194.6, 13.2, 9.9), (93.3, 349.8, 213.8, 10.4),
+    (203.9, 517.3, 19.7, 19.2), (-1.0, 62.9, 23.2, 35.7), (0.7, 86.5, 23.5, 35.7),
+    (48.96, 56.44, 321.92, 143.3),
+]
+
+
+def _placement(x, y, width, height, **extra):
+    return {"x": x, "y": y, "width": width, "height": height, **PAGE, **extra}
+
+
+def test_edge_slivers_are_thin_long_strips_touching_a_page_edge():
+    assert all(is_edge_sliver(_placement(*box)) for box in EDGE_SLIVERS)
+    assert not any(is_edge_sliver(_placement(*box)) for box in KEPT_ART)
+    # The same rule applies to the right, top, and bottom edges.
+    assert is_edge_sliver(_placement(PAGE["page_width"] - 2, 30, 3, 300))
+    assert is_edge_sliver(_placement(20, -1, 350, 4))
+    assert is_edge_sliver(_placement(20, PAGE["page_height"] - 3, 350, 4))
+    assert not is_edge_sliver(_placement(20, 300, 350, 4))
+
+
+def test_chapter_split_skips_edge_slivers_but_keeps_symbols():
+    sliver = _placement(-1.3, -1.1, 4.4, 398.6, page=3, filename="sliver.png")
+    symbol = _placement(194.2, 243.2, 8.8, 8.8, page=3, filename="symbol.png")
+    allowed, skipped = group_images_by_page([sliver, symbol], {}, {})
+    assert [image["filename"] for image in allowed[3]] == ["symbol.png"]
+    assert skipped == 1
+
+
+def _sliver_project(tmp_path: Path) -> Path:
+    docs = tmp_path / "docs/src/content/docs/rules"
+    docs.mkdir(parents=True)
+    (tmp_path / "chapters.json").write_text(json.dumps({
+        "source": "data/markdown/Book_pages.md",
+        "chapters": {"rules": {"title": "規則", "files": {"index": {"title": "規則", "pages": [1, 2]}}}},
+    }), encoding="utf-8")
+    images = tmp_path / "data/markdown/images/Book"
+    images.mkdir(parents=True)
+    (images / "manifest.json").write_text(json.dumps({"images": [
+        _placement(-1.3, -1.1, 4.4, 398.6, page=1, filename="page001_sliver.png"),
+        _placement(194.2, 243.2, 8.8, 8.8, page=1, filename="page001_symbol.png"),
+    ]}), encoding="utf-8")
+    (docs / "index.md").write_text(
+        "---\ntitle: 規則\n---\n\n正文。\n\n![](../../../assets/page001_sliver.png)\n\n"
+        "![](../../../assets/page001_symbol.png)\n\n| |\n|---|\n\n|階級|骰子| |\n|---|---|---|\n",
+        encoding="utf-8")
+    return tmp_path
+
+
+def test_layout_gate_flags_edge_slivers_and_empty_tables(tmp_path: Path):
+    issues = layout_issues(_sliver_project(tmp_path))
+    assert "docs/src/content/docs/rules/index.md: layout image page001_sliver.png" in issues
+    assert "docs/src/content/docs/rules/index.md:11: empty table" in issues
+    assert not any("page001_symbol.png" in issue for issue in issues)
+    assert sum("empty table" in issue for issue in issues) == 1
+
+
+def test_repair_drops_edge_slivers_after_paired_repair_was_applied(tmp_path: Path):
+    project = _sliver_project(tmp_path)
+    docs = project / "docs/src/content/docs"
+    plan_path = project / "data/layout-repair.json"
+    plan_path.write_text(json.dumps({"applied": {"source_sha256": "s", "target_sha256": _tree_digest(docs)}}),
+                         encoding="utf-8")
+    result = repair(project)
+    assert result == {"already_applied": 1, "edge_slivers_removed": 1,
+                      "edge_sliver_files": ["rules/index.md: page001_sliver.png"]}
+    text = (docs / "rules/index.md").read_text(encoding="utf-8")
+    assert "page001_sliver.png" not in text and "page001_symbol.png" in text
+    assert "正文。\n\n![](../../../assets/page001_symbol.png)" in text
+    assert json.loads(plan_path.read_text(encoding="utf-8"))["applied"]["target_sha256"] == _tree_digest(docs)
+    assert repair(project) == {"already_applied": 1}

@@ -14,7 +14,8 @@ from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 
-from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, repair_d66_tables, strip_duplicate_title, strip_page_furniture
+from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, is_edge_sliver, repair_d66_tables, strip_duplicate_title, strip_page_furniture
+from _markdown_utils import find_empty_tables
 from _paired_layout import _format_translated_spread, _pdf_roles, _tree_digest, add_reviewed_decisions, derive_layout_plan, layout_plan_applied, match_chapter_paths, repair_paired_layout
 from generate_nav import deployment_base_path, regenerate
 from split_chapters import build_page_text_stats, extract_pages, group_images_by_page, normalize_files, write_meta_yml
@@ -351,15 +352,42 @@ def _update_group_titles(project_root: Path, chapters: dict, leaves: list[tuple[
         write_meta_yml(docs / slug, section)
 
 
-def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str, int]:
+def remove_edge_slivers(docs: Path, manifest: list[dict]) -> list[str]:
+    """Drop page-edge sliver image references; return `path: filename` per removal."""
+    slivers = {image["filename"] for image in manifest if is_edge_sliver(image)}
+    removed: list[str] = []
+    for path in sorted(docs.rglob("*.md")):
+        original = path.read_text(encoding="utf-8")
+        def drop(match: re.Match[str]) -> str:
+            filename = Path(match.group(1)).name
+            if filename not in slivers:
+                return match.group(0)
+            removed.append(f"{path.relative_to(docs)}: {filename}")
+            return "\0"
+        marked = IMAGE_RE.sub(drop, original)
+        if marked != original:
+            path.write_text(re.sub(r"\n*\0\n*", "\n\n", marked).rstrip("\n") + "\n", encoding="utf-8")
+    return removed
+
+
+def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str, object]:
     docs = project_root / "docs/src/content/docs"
     plan_path = project_root / "data/layout-repair.json"
-    if plan_path.is_file():
-        applied = json.loads(plan_path.read_text(encoding="utf-8")).get("applied", {})
-        if applied.get("target_sha256") == _tree_digest(docs):
-            return {"already_applied": 1}
     config_path = project_root / "chapters.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
+    manifest = _image_manifest(project_root, config)
+    digest_before = _tree_digest(docs)
+    slivers = remove_edge_slivers(docs, manifest)
+    sliver_stats = {"edge_slivers_removed": len(slivers), "edge_sliver_files": slivers} if slivers else {}
+    if plan_path.is_file():
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        applied = plan.get("applied", {})
+        if applied.get("target_sha256") == digest_before:
+            if slivers:
+                # Sliver removal is the only change since the paired repair was applied.
+                applied["target_sha256"] = _tree_digest(docs)
+                plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            return {"already_applied": 1, **sliver_stats}
     chapters = config["chapters"]
     for section in chapters.values():
         section["files"] = normalize_files(section.get("files", {}))
@@ -367,7 +395,6 @@ def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str,
     style_path = project_root / "style-decisions.json"
     style = json.loads(style_path.read_text(encoding="utf-8")) if style_path.exists() else {}
     base = deployment_base_path(style)
-    manifest = _image_manifest(project_root, config)
     source_path = project_root / config.get("source", "")
     pages = extract_pages(source_path.read_text(encoding="utf-8")) if source_path.is_file() else {}
     page_stats = build_page_text_stats(pages, config.get("clean_patterns", []))
@@ -435,7 +462,7 @@ def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str,
     _update_group_titles(project_root, chapters, leaves, toc_labels)
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     regenerate(project_root)
-    return dict(stats)
+    return {**stats, **sliver_stats}
 
 
 def _prepare_staged_source(project_root: Path, source_docs: Path) -> dict[str, int]:
@@ -594,6 +621,8 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
             filename = Path(match.group(1)).name
             if filename in known_images and filename not in keep:
                 issues.append(f"{name}: layout image {filename}")
+        for start, _ in find_empty_tables(text):
+            issues.append(f"{name}:{start + 1}: empty table")
         source_rel = source_for_target_plan.get(str(path.relative_to(docs)))
         if source_rel and source_rel in plan.get("spreads", {}):
             probe = body.splitlines()

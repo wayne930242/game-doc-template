@@ -65,6 +65,49 @@ def strip_artifact_headings(text: str) -> str:
     return cleaned.strip()
 
 
+_TABLE_ROW_RE = re.compile(r"^[ \t]*\|.*\|[ \t]*$")
+_TABLE_DELIMITER_RE = re.compile(r"^[ \t]*\|(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*$")
+
+
+def find_empty_tables(text: str) -> list[tuple[int, int]]:
+    """回傳所有儲存格皆為空白的 Markdown 表格行範圍（0-based，含首不含尾）。
+
+    PDF 表單的空白填寫格會被抽成 ``| |`` / ``|---|`` 這類沒有內容的表格。
+    只要有任一儲存格含文字，該表格即保留。
+    """
+    lines = text.split("\n")
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while start < len(lines):
+        if not _TABLE_ROW_RE.match(lines[start]):
+            start += 1
+            continue
+        end = start
+        while end < len(lines) and _TABLE_ROW_RE.match(lines[end]):
+            end += 1
+        rows = lines[start:end]
+        if (
+            len(rows) >= 2
+            and _TABLE_DELIMITER_RE.match(rows[1])
+            and not any(cell.strip() for index, row in enumerate(rows) if index != 1
+                        for cell in row.strip().strip("|").split("|"))
+        ):
+            spans.append((start, end))
+        start = end
+    return spans
+
+
+def strip_empty_tables(text: str) -> tuple[str, int]:
+    """移除所有儲存格皆為空白的 Markdown 表格，連同其後一行空白行。"""
+    spans = find_empty_tables(text)
+    lines = text.split("\n")
+    for start, end in reversed(spans):
+        if end < len(lines) and not lines[end].strip() and (start == 0 or not lines[start - 1].strip()):
+            end += 1
+        del lines[start:end]
+    return "\n".join(lines), len(spans)
+
+
 @dataclass(frozen=True)
 class _TextBlock:
     """一段以空白行分隔的區塊，`start`／`end` 為 0-based、含首尾的行號。"""

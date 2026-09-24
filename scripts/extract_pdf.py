@@ -41,6 +41,7 @@ from _markdown_utils import (
     merge_list_continuations,
     merge_paragraph_continuations,
     strip_artifact_headings,
+    strip_empty_tables,
 )
 from _ocr_lib import (
     DEFAULT_OCR_DPI,
@@ -342,6 +343,18 @@ def clean_artifact_headings(output_files: list[Path]) -> None:
         if cleaned != original:
             output_file.write_text(cleaned, encoding="utf-8")
             print(f"✓ 已移除頁碼裝飾標題: {output_file}")
+
+
+def clean_empty_tables(output_files: list[Path]) -> None:
+    """移除所有儲存格皆為空白的表格（PDF 表單的空白填寫格）。"""
+    for output_file in output_files:
+        if not output_file.exists():
+            continue
+        original = output_file.read_text(encoding="utf-8")
+        cleaned, count = strip_empty_tables(original)
+        if count:
+            output_file.write_text(cleaned, encoding="utf-8")
+            print(f"✓ 已移除空白表格（{count} 個）: {output_file}")
 
 
 def clean_list_continuations(output_files: list[Path]) -> None:
@@ -972,6 +985,7 @@ def main():
         output_dir / f"{output_stem}_pages.md",
     ]
     clean_watermarks(generated_markdown, strategy["watermarks"])
+    clean_empty_tables(generated_markdown)
     if strategy["page_text_engine"] == "opendataloader":
         clean_opendataloader_temp_image_links(generated_markdown)
         clean_artifact_headings(generated_markdown)

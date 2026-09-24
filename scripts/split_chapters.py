@@ -58,6 +58,7 @@ from _layout_cleanup import (
     d66_pair_pages,
     d66_pages,
     is_d66_icon,
+    is_edge_sliver,
     is_page_ornament,
     repair_d66_tables,
     strip_duplicate_title,
@@ -364,7 +365,7 @@ def group_images_by_page(
     skipped = 0
     for image in images:
         ornament_key = (image.get("visual_hash"), round(float(image.get("width") or 0)), round(float(image.get("height") or 0)))
-        if is_page_ornament(image, ornament_counts[ornament_key]) or (
+        if is_page_ornament(image, ornament_counts[ornament_key]) or is_edge_sliver(image) or (
             int(image["page"]) in dice_pages and is_d66_icon(image)
         ) or (
             int(image["page"]) in pair_pages

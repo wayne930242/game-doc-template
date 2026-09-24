@@ -73,6 +73,24 @@ def annotate_d66_pair_headings(text: str, first_die: int) -> tuple[str, int]:
     return "\n".join(lines), changed
 
 
+def is_edge_sliver(image: dict) -> bool:
+    """Detect bleed and frame strips cut off at a page edge.
+
+    A sliver touches a page edge along its thin side, spans at most 6% of the
+    page across, and is at least ten times longer than it is thin. Symbols and
+    rules inside the page, and small edge tabs, fail one of these tests.
+    """
+    width, height = image.get("width"), image.get("height")
+    pw, ph = image.get("page_width"), image.get("page_height")
+    x, y = image.get("x"), image.get("y")
+    if not all(value is not None for value in (width, height, pw, ph, x, y)):
+        return False
+    width, height, pw, ph, x, y = map(float, (width, height, pw, ph, x, y))
+    vertical = (x <= 1 or x + width >= pw - 1) and width <= pw * 0.06 and height >= width * 10
+    horizontal = (y <= 1 or y + height >= ph - 1) and height <= ph * 0.06 and width >= height * 10
+    return vertical or horizontal
+
+
 def is_page_ornament(image: dict, repeat_count: int) -> bool:
     """Drop repeated marginal art and blank pixels; keep labeled rank and scene art."""
     width, height = image.get("width"), image.get("height")
