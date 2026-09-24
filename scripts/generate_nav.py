@@ -76,8 +76,13 @@ def section_primary_slug(section_slug: str, section: dict, mode: str = "zh_only"
     return f"{prefix}{_first_leaf_slug(section_slug, section)}"
 
 
+# Deploy targets served under a sub-path. "blog" nests the book at /books/<slug>/ inside
+# the blog site; "github-pages" serves a project site at /<repo-name>/.
+SUBPATH_TARGETS = ("blog", "github-pages")
+
+
 def deployment_base_path(style: dict) -> str:
-    """Return the configured deployment base path (e.g. '/repo-name'), or '' for root deploys.
+    """Return the configured deployment base path (e.g. '/books/slug'), or '' for root deploys.
 
     Source of truth: style-decisions.json.deployment.base_path. Absolute hrefs written into
     page content (hero.actions.link, LinkCard href) are literal strings Astro does NOT
@@ -87,8 +92,8 @@ def deployment_base_path(style: dict) -> str:
     Pages project sites).
     """
     deployment = style.get("deployment", {})
-    if deployment.get("target") != "github-pages":
-        # Only github-pages deploys need a non-root base path. Ignore any stale
+    if deployment.get("target") not in SUBPATH_TARGETS:
+        # Only sub-path deploys need a non-root base path. Ignore any stale
         # base_path left over from a previous target (e.g. switched back to root/Vercel)
         # so content links never carry a prefix the current deploy doesn't serve under.
         return ""
@@ -298,7 +303,7 @@ def update_astro_sidebar(config_text: str, chapters: dict, mode: str = "zh_only"
 
 
 SITE_BASE_PATTERN = re.compile(
-    r"(export default defineConfig\(\{\n)(\tsite: '[^']*',\n\tbase: '[^']*',\n)?",
+    r"(export default defineConfig\(\{\n)(\tsite: '[^']*',\n)?(\tbase: '[^']*',\n)?",
 )
 
 
@@ -314,20 +319,23 @@ def update_astro_site_base(config_text: str, style: dict) -> str:
 
     Single source of truth is style-decisions.json.deployment:
     - target == "github-pages": write `site`/`base` derived from repository.url + base_path.
+    - target == "blog": write `base` only; the blog owns the domain.
     - anything else (unset, "root"): strip any previously-written site/base block, since a
-      root deploy (Vercel, custom domain) must not carry a stale GitHub Pages base path.
+      root deploy (Vercel, custom domain) must not carry a stale sub-path base.
     """
     deployment = style.get("deployment", {})
     target = deployment.get("target")
 
-    if target == "github-pages":
+    if target in SUBPATH_TARGETS:
         base_path = deployment_base_path(style)
         if not base_path:
-            print("⚠ deployment.target=github-pages 但 base_path 未設定，略過 site/base 寫入", file=sys.stderr)
+            print(f"⚠ deployment.target={target} 但 base_path 未設定，略過 site/base 寫入", file=sys.stderr)
             return config_text
-        repo_url = style.get("repository", {}).get("url", "")
-        site_url = _github_pages_site_url(repo_url)
-        replacement = f"\\1\tsite: '{site_url}',\n\tbase: '{base_path}',\n"
+        replacement = f"\\1\tbase: '{base_path}',\n"
+        if target == "github-pages":
+            repo_url = style.get("repository", {}).get("url", "")
+            site_url = _github_pages_site_url(repo_url)
+            replacement = f"\\1\tsite: '{site_url}',\n\tbase: '{base_path}',\n"
     else:
         replacement = r"\1"
 

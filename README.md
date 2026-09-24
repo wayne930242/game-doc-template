@@ -187,7 +187,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
    在 `docs/` 下執行 `bun dev`，檢查頁面、目錄、連結、圖片與主題樣式。
 
 10. 建置與部署  
-    完整執行 `translate all` 時會自動重建導覽、執行 `bun run build` 並驗證搜尋索引。確認 `docs/dist/` 後部署——Public 專案優先用 GitHub Pages，需要密碼保護或私有部署則用 Vercel。詳見〈部署〉章節。
+    完整執行 `translate all` 時會自動重建導覽、執行 `bun run build` 並驗證搜尋索引。確認後以 `uv run python scripts/export_site.py --out <dir>` 匯出到 blog；仍需獨立部署的專案才用 GitHub Pages 或 Vercel。詳見〈部署〉章節。
 
 ---
 
@@ -201,18 +201,52 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 
 ## 部署
 
-先判斷專案可見度：**Public 專案優先用 GitHub Pages**（免費、不需額外服務、與現有 repo 直接整合）；需要密碼保護或私有部署，才用 Vercel。
+**預設流程是匯出到 blog**：每本書仍是獨立的 Starlight 建置，但以子路徑 `/books/<slug>/` 併入 blog（wayneh.tw），由 blog 統一以共用密碼保護整個 `/books/` 路徑。只有仍需獨立部署的專案才使用下方的 GitHub Pages 或 Vercel 流程。
 
-### GitHub Pages（Public 專案推薦）
+部署目標與子路徑統一記錄在 `style-decisions.json` 的 `deployment`（`target` 為 `blog`、`github-pages` 或 `root`），`generate_nav.py` 依此寫入 `docs/astro.config.mjs` 的 `base`，並把首頁連結加上同樣的前綴。
 
-1. 在 `docs/astro.config.mjs` 設定 `site` 與 `base`（`base` 要對應 repo 名稱）：
+### 匯出到 blog（預設）
 
-   ```js
-   export default defineConfig({
-   	site: 'https://<github-username>.github.io',
-   	base: '/<repo-name>',
-   	// ...
-   });
+1. 記錄子路徑（`new-project` 已預設寫入 `/books/<slug>`），並重建導覽讓 `base` 與首頁連結同步：
+
+   ```bash
+   uv run python scripts/style_decisions.py set-deployment --target blog --base-path /books/<slug>
+   uv run python scripts/generate_nav.py
+   ```
+
+2. 建置並匯出：
+
+   ```bash
+   uv run python scripts/export_site.py --out <dir>          # <dir> 須不存在或為空
+   uv run python scripts/export_site.py --out <dir> --clean  # 覆寫既有輸出
+   ```
+
+   指令會先確認 `astro.config.mjs` 的 `base` 與 `style-decisions.json` 一致，接著執行 `bun run build`（含 zh-TW 搜尋後處理），再掃描所有 HTML／CSS，只要有網址跳出 `/books/<slug>/` 就中止並列出位置。通過後把靜態輸出複製到 `<dir>/`，並寫入 `<dir>/book.json`。結束時會印出檔案數與總大小（blog 的 Vercel 部署有檔案數限制）。
+
+3. `book.json` 的欄位全部取自專案既有資料，不需逐專案手填：
+
+   | 欄位 | 來源 |
+   | --- | --- |
+   | `slug`、`base_path` | `deployment.base_path` |
+   | `title`、`description` | `site.title`、`site.description` |
+   | `original_title` | `site.original_title`；未記錄時取 `data/pdfs/` 唯一 PDF 的檔名，否則為 `null` |
+   | `cover` | `images.hero`（其次 `images.og`）存在時複製為 `cover.<副檔名>`，否則為 `null` |
+   | `credits` | `credits.entries` |
+   | `progress` | `data/translation-progress.json` 的完成章數／總章數 |
+   | `updated_at` | 最後一次 commit 時間 |
+   | `source_repo` | `git remote origin` 的 `owner/repo` |
+
+4. blog 端把 `<dir>/` 放到 `public/books/<slug>/`。匯出內容不含 `middleware.ts` 與 `api/`，密碼保護由 blog 負責。
+
+內文中手寫的絕對連結（例如 `fix-ref` 產生的跨頁連結）不會被 Astro 自動加上 `base`，必須含 `/books/<slug>` 前綴；匯出時的網址掃描會抓出遺漏。
+
+### GitHub Pages（獨立部署的 Public 專案）
+
+1. 記錄部署目標並重建導覽，`generate_nav.py` 會在 `docs/astro.config.mjs` 寫入 `site` 與 `base`：
+
+   ```bash
+   uv run python scripts/style_decisions.py set-deployment --target github-pages --base-path /<repo-name>
+   uv run python scripts/generate_nav.py
    ```
 
 2. 新增 `.github/workflows/deploy.yml`：
@@ -270,7 +304,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 
 GitHub Pages 是純靜態託管，沒有 middleware，無法做密碼保護——需要密碼保護時請改用下方的 Vercel 流程。
 
-### Vercel（需要密碼保護或私有部署時使用）
+### Vercel（獨立部署且需要密碼保護時使用）
 
 1. 推送到 GitHub
 2. 在 Vercel 匯入專案
@@ -278,7 +312,7 @@ GitHub Pages 是純靜態託管，沒有 middleware，無法做密碼保護—�
 
 ### 密碼保護（可選，僅 Vercel 支援）
 
-在 Vercel 環境變數設定 `SITE_PASSWORD` 即可啟用密碼保護：
+獨立部署到 Vercel 時，在環境變數設定 `SITE_PASSWORD` 即可啟用密碼保護（匯出到 blog 時不需要，由 blog 統一把關）：
 
 1. 進入 Vercel 專案設定 → Environment Variables
 2. 新增 `SITE_PASSWORD`，值為您想要的密碼

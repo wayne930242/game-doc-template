@@ -60,7 +60,8 @@ tesseract --list-langs
 | `extract_pdf.py` | PDF／EPUB／圖片來源轉 Markdown，支援文字提取、OCR、opendataloader、圖片提取 |
 | `split_chapters.py` | 依 `chapters.json` 設定將 Markdown 拆分為多個章節檔案 |
 | `merge_multi.py` | 合併多份 `chapters_<name>.json` 為單一 `chapters.json` |
-| `generate_nav.py` | 依 `chapters.json` 產生首頁 `index.mdx` 並更新 `astro.config.mjs` 側邊欄 |
+| `generate_nav.py` | 依 `chapters.json` 產生首頁 `index.mdx` 並更新 `astro.config.mjs` 側邊欄與 `base` |
+| `export_site.py` | 以 `deployment.base_path` 建置網站，匯出靜態輸出與 `book.json` 供 blog 併入 `/books/<slug>/` |
 | `clean_sample_data.py` | 清除範本／範例資料，供 `new-project` 自動執行或既有專案手動重置 |
 
 ### 術語

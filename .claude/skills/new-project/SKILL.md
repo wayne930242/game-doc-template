@@ -128,20 +128,16 @@ uv run python scripts/style_decisions.py set-repository \
   --visibility "<private_or_public>" \
   --url "<REPO_URL>" \
   --show-on-homepage <true_or_false>
+uv run python scripts/style_decisions.py set-site --original-title "$GAME_TITLE_EN"
+uv run python scripts/style_decisions.py set-deployment \
+  --target blog \
+  --base-path "/books/<project_name>"
 uv run python scripts/validate_style_decisions.py
 ```
 
-If `REPO_VISIBILITY` is `public`, also persist the recommended deployment target so `generate_nav.py` and `fix-ref` generate correctly base-prefixed internal links (see README.md's "GitHub Pages（Public 專案推薦）" section for the full recipe — workflow file, `gh api ... pages` enablement, etc.):
+Every project defaults to the blog export: the book is served at `/books/<project_name>/` inside the blog, so `generate_nav.py` writes that `base` and `fix-ref` prefixes internal links with it (see README.md「匯出到 blog（預設）」). Record `--target github-pages --base-path "/<project_name>"` or `--target root` instead only when the user asks for a standalone deployment.
 
-```bash
-uv run python scripts/style_decisions.py set-deployment \
-  --target github-pages \
-  --base-path "/<project_name>"
-```
-
-If `REPO_VISIBILITY` is `private`, do not set `deployment` — leave it unset so `generate_nav.py` defaults to root-relative links (Vercel/custom-domain deploys).
-
-**Verification:** PDF exists in `data/pdfs/`; config files updated; for public repos, `style-decisions.json.deployment.base_path` is set and matches `<project_name>`.
+**Verification:** PDF exists in `data/pdfs/`; config files updated; `style-decisions.json.deployment` is `{"target": "blog", "base_path": "/books/<project_name>"}` unless the user chose a standalone deployment; `site.original_title` is set.
 
 ### Step 6: Verify and Report
 

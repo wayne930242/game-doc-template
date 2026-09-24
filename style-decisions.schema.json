@@ -48,7 +48,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "target": { "enum": ["github-pages", "root"] },
+        "target": { "enum": ["blog", "github-pages", "root"] },
         "base_path": { "type": "string" }
       }
     },
@@ -57,6 +57,7 @@
       "additionalProperties": false,
       "properties": {
         "title": { "type": "string" },
+        "original_title": { "type": "string" },
         "description": { "type": "string" },
         "tagline": { "type": "string" },
         "intro": { "type": "string" }

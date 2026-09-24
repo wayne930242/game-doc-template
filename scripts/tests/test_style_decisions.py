@@ -132,6 +132,30 @@ def test_cmd_set_theme_persists_all_fields(tmp_path):
     assert theme["palette"].startswith("冷色系")
 
 
+def test_cmd_set_deployment_records_blog_base_path(tmp_path):
+    style_path = tmp_path / "style-decisions.json"
+    _seed_style(style_path)
+
+    sd.cmd_set_deployment(
+        argparse.Namespace(style=style_path, schema=SCHEMA_PATH, target="blog", base_path="/books/kedamono-opera")
+    )
+    sd.cmd_set_site(
+        argparse.Namespace(
+            style=style_path,
+            schema=SCHEMA_PATH,
+            title="暗獸歌劇",
+            original_title="Kedamono Opera",
+            description=None,
+            tagline=None,
+            intro=None,
+        )
+    )
+
+    payload = json.loads(style_path.read_text(encoding="utf-8"))
+    assert payload["deployment"] == {"target": "blog", "base_path": "/books/kedamono-opera"}
+    assert payload["site"] == {"title": "暗獸歌劇", "original_title": "Kedamono Opera"}
+
+
 def test_cmd_set_theme_merges_without_dropping_existing(tmp_path):
     style_path = tmp_path / "style-decisions.json"
     _seed_style(style_path)

@@ -185,6 +185,12 @@ uv run python scripts/style_decisions.py set-images --preserve-images <true_or_f
      --intro "<USER_INPUT>"
    ```
 
+   Record the source-language title with `set-site --original-title "<title>"` when `site.original_title` is empty, and record the blog base path when `deployment` is unset so `generate_nav.py` in Step 8 writes the matching `base`:
+
+   ```bash
+   uv run python scripts/style_decisions.py set-deployment --target blog --base-path "/books/<repository.slug>"
+   ```
+
 8. Ask for copyright and credits in Traditional Chinese:
    - Copyright notice text（例：`© 2024 Author Name. All rights reserved.`）
    - Credits entries as role → name pairs（例：原作者、翻譯、美術設計等）
@@ -228,7 +234,7 @@ uv run python scripts/validate_style_decisions.py
 
 `generate_nav.py` will render these as **## 版權宣告** and **## 製作名單** sections on the homepage. If neither is provided, a generic fallback disclaimer is used.
 
-**Verification:** `validate_style_decisions.py` exits 0; `style-decisions.json` contains site meta, copyright, credits, and image decisions.
+**Verification:** `validate_style_decisions.py` exits 0; `style-decisions.json` contains site meta (including `original_title`), copyright, credits, image decisions, and a `deployment` entry (`blog` at `/books/<slug>` by default).
 
 ### Step 7: Build Terminology Baseline
 

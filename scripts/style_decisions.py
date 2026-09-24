@@ -140,7 +140,7 @@ def cmd_set_deployment(args: argparse.Namespace) -> None:
 
 def cmd_set_site(args: argparse.Namespace) -> None:
     patch: dict[str, Any] = {"site": {}}
-    for key in ("title", "description", "tagline", "intro"):
+    for key in ("title", "original_title", "description", "tagline", "intro"):
         value = getattr(args, key)
         if value is not None:
             patch["site"][key] = value
@@ -336,12 +336,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_repo.set_defaults(func=cmd_set_repository)
 
     p_deploy = sub.add_parser("set-deployment", help="Update deployment target and base path.")
-    p_deploy.add_argument("--target", choices=("github-pages", "root"))
-    p_deploy.add_argument("--base-path", dest="base_path", help="e.g. /repo-name for GitHub Pages, or empty string for root deploys")
+    p_deploy.add_argument("--target", choices=("blog", "github-pages", "root"))
+    p_deploy.add_argument(
+        "--base-path",
+        dest="base_path",
+        help="e.g. /books/<slug> for the blog export, /repo-name for GitHub Pages, or empty string for root deploys",
+    )
     p_deploy.set_defaults(func=cmd_set_deployment)
 
     p_site = sub.add_parser("set-site", help="Update homepage site metadata.")
     p_site.add_argument("--title")
+    p_site.add_argument("--original-title", dest="original_title", help="Source-language title of the book")
     p_site.add_argument("--description")
     p_site.add_argument("--tagline")
     p_site.add_argument("--intro")
