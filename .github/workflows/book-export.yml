@@ -1,8 +1,8 @@
 name: Book Export
 
 # Builds the blog export on every push to main and publishes it as the asset
-# book-export.tar.gz of one rolling release. The blog's sync-books.mjs downloads
-# it with `"ref": "book-export"` in books.config.json.
+# book-export.tar.gz of one rolling release, then asks the blog to redeploy. The
+# blog's sync-books.mjs downloads it with `ref: "book-export"` in books.config.js.
 
 on:
   push:
@@ -18,6 +18,8 @@ concurrency:
 
 env:
   RELEASE_TAG: book-export
+  BLOG_REPO: wayne930242/knowledge-base
+  SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
 
 jobs:
   target:
@@ -41,24 +43,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
-
       - name: Install bun
         uses: oven-sh/setup-bun@v2
 
       - name: Set up Python
-        run: uv python install
-
-      - name: Sync Python dependencies
-        run: uv sync --no-dev
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
 
       - name: Install site dependencies
         working-directory: docs
         run: bun install --frozen-lockfile
 
       - name: Build export archive
-        run: uv run python scripts/export_site.py --out "$RUNNER_TEMP/book" --archive "$RUNNER_TEMP/book-export.tar.gz"
+        run: python3 scripts/export_site.py --out "$RUNNER_TEMP/book" --archive "$RUNNER_TEMP/book-export.tar.gz"
 
       - name: Publish to rolling release
         env:
@@ -72,3 +70,14 @@ jobs:
             gh release create "$RELEASE_TAG" "$RUNNER_TEMP/book-export.tar.gz" \
               --target "$GITHUB_SHA" --title "Book export" --notes "$notes"
           fi
+
+      # BLOG_DISPATCH_TOKEN: fine-grained token with Contents read/write on BLOG_REPO.
+      - name: Ask the blog to redeploy
+        env:
+          GH_TOKEN: ${{ secrets.BLOG_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error title=Blog not notified::Set the BLOG_DISPATCH_TOKEN secret so the blog picks up this export."
+            exit 1
+          fi
+          gh api "repos/$BLOG_REPO/dispatches" -f event_type=book-export -f "client_payload[repo]=$GITHUB_REPOSITORY"

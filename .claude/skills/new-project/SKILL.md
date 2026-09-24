@@ -135,9 +135,17 @@ uv run python scripts/style_decisions.py set-deployment \
 uv run python scripts/validate_style_decisions.py
 ```
 
+For the blog export, give the repo the secret that lets `Book Export` redeploy the blog. The token lives in the macOS Keychain as `blog-dispatch-token`; pipe it straight into GitHub without printing it:
+
+```bash
+security find-generic-password -s blog-dispatch-token -w | gh secret set BLOG_DISPATCH_TOKEN --repo "<username>/<project_name>"
+```
+
+If the Keychain has no entry, stop and ask the user to regenerate the `blog-dispatch` fine-grained token (Contents read/write on `wayne930242/knowledge-base` only) and store it with `security add-generic-password -U -a <username> -s blog-dispatch-token -w "$(pbpaste)"`.
+
 Every project defaults to the blog export: the book is served at `/books/<project_name>/` inside the blog, so `generate_nav.py` writes that `base` and `fix-ref` prefixes internal links with it (see README.md「匯出到 blog（預設）」). Record `--target github-pages --base-path "/<project_name>"` or `--target root` instead only when the user asks for a standalone deployment.
 
-**Verification:** PDF exists in `data/pdfs/`; config files updated; `style-decisions.json.deployment` is `{"target": "blog", "base_path": "/books/<project_name>"}` unless the user chose a standalone deployment; `site.original_title` is set.
+**Verification:** PDF exists in `data/pdfs/`; config files updated; `style-decisions.json.deployment` is `{"target": "blog", "base_path": "/books/<project_name>"}` unless the user chose a standalone deployment; `site.original_title` is set; for the blog export, `gh secret list --repo <username>/<project_name>` shows `BLOG_DISPATCH_TOKEN`.
 
 ### Step 6: Verify and Report
 

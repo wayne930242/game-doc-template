@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from _markdown_utils import yaml_safe
+from site_config import deployment_base_path, update_astro_site_base, update_astro_site_title
 from split_chapters import normalize_files, validate_section_slugs
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -74,34 +75,6 @@ def section_primary_slug(section_slug: str, section: dict, mode: str = "zh_only"
     """Return the primary doc slug for a section (recursive for nested files)."""
     prefix = mode_prefix(mode)
     return f"{prefix}{_first_leaf_slug(section_slug, section)}"
-
-
-# Deploy targets served under a sub-path. "blog" nests the book at /books/<slug>/ inside
-# the blog site; "github-pages" serves a project site at /<repo-name>/.
-SUBPATH_TARGETS = ("blog", "github-pages")
-
-
-def deployment_base_path(style: dict) -> str:
-    """Return the configured deployment base path (e.g. '/books/slug'), or '' for root deploys.
-
-    Source of truth: style-decisions.json.deployment.base_path. Absolute hrefs written into
-    page content (hero.actions.link, LinkCard href) are literal strings Astro does NOT
-    base-resolve on its own — unlike Starlight-native sidebar `slug` entries, which Starlight
-    resolves against `base` internally. Any href built here for content-embedded links must be
-    prefixed with this value explicitly, or it silently 404s on non-root deploys (e.g. GitHub
-    Pages project sites).
-    """
-    deployment = style.get("deployment", {})
-    if deployment.get("target") not in SUBPATH_TARGETS:
-        # Only sub-path deploys need a non-root base path. Ignore any stale
-        # base_path left over from a previous target (e.g. switched back to root/Vercel)
-        # so content links never carry a prefix the current deploy doesn't serve under.
-        return ""
-    base_path = deployment.get("base_path", "") or ""
-    base_path = base_path.rstrip("/")
-    if base_path and not base_path.startswith("/"):
-        base_path = f"/{base_path}"
-    return base_path
 
 
 def section_primary_href(section_slug: str, section: dict, mode: str = "zh_only", base_path: str = "") -> str:
@@ -300,61 +273,6 @@ def update_astro_sidebar(config_text: str, chapters: dict, mode: str = "zh_only"
     if count == 0:
         raise SidebarPatchError("無法定位 astro.config.mjs 中的 sidebar 陣列")
     return result
-
-
-SITE_BASE_PATTERN = re.compile(
-    r"(export default defineConfig\(\{\n)(\tsite: '[^']*',\n)?(\tbase: '[^']*',\n)?",
-)
-
-
-def _github_pages_site_url(repo_url: str) -> str:
-    """Derive https://<user>.github.io from a github.com repo URL."""
-    match = re.search(r"github\.com[:/]([^/]+)/", repo_url)
-    username = match.group(1) if match else "<github-username>"
-    return f"https://{username}.github.io"
-
-
-def update_astro_site_base(config_text: str, style: dict) -> str:
-    """Insert/update or remove the top-level `site`/`base` defineConfig keys.
-
-    Single source of truth is style-decisions.json.deployment:
-    - target == "github-pages": write `site`/`base` derived from repository.url + base_path.
-    - target == "blog": write `base` only; the blog owns the domain.
-    - anything else (unset, "root"): strip any previously-written site/base block, since a
-      root deploy (Vercel, custom domain) must not carry a stale sub-path base.
-    """
-    deployment = style.get("deployment", {})
-    target = deployment.get("target")
-
-    if target in SUBPATH_TARGETS:
-        base_path = deployment_base_path(style)
-        if not base_path:
-            print(f"⚠ deployment.target={target} 但 base_path 未設定，略過 site/base 寫入", file=sys.stderr)
-            return config_text
-        replacement = f"\\1\tbase: '{base_path}',\n"
-        if target == "github-pages":
-            repo_url = style.get("repository", {}).get("url", "")
-            site_url = _github_pages_site_url(repo_url)
-            replacement = f"\\1\tsite: '{site_url}',\n\tbase: '{base_path}',\n"
-    else:
-        replacement = r"\1"
-
-    return SITE_BASE_PATTERN.sub(replacement, config_text, count=1)
-
-
-SITE_TITLE_PATTERN = re.compile(r"^(?P<lead>\ttitle: )'(?:[^'\\\n]|\\.)*',$", re.MULTILINE)
-
-
-def update_astro_site_title(config_text: str, style: dict) -> str:
-    """Set SITE_CONFIG.title from style-decisions.json.site.title (the same source as book.json).
-
-    Leaves the config unchanged when no site title is recorded.
-    """
-    title = style.get("site", {}).get("title")
-    if not title:
-        return config_text
-    literal = title.replace("\\", "\\\\").replace("'", "\\'")
-    return SITE_TITLE_PATTERN.sub(lambda match: f"{match['lead']}'{literal}',", config_text, count=1)
 
 
 def regenerate(project_root: Path) -> None:
