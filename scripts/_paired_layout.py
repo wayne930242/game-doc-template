@@ -95,38 +95,61 @@ def _reviewed_overlay(lines: list[str], records: list[dict]) -> int:
     return changed
 
 
-def add_reviewed_layout(plan_path: Path, reviewed_source_docs: Path,
-                        reviewed_target_docs: Path, current_source_docs: Path,
-                        current_target_docs: Path) -> dict[str, int]:
-    """Record a PDF-reviewed structural pass as project-owned layout data."""
+def add_reviewed_decisions(plan_path: Path, decisions_path: Path,
+                           source_docs: Path, target_docs: Path) -> dict[str, int]:
+    """Apply explicit, PDF-checked decisions to individual residual lines."""
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    reviewed: dict[str, dict[str, list[dict]]] = {"source": {}, "target": {}}
-    counts = Counter()
-    source_for_target = {target: source for source, target in plan.get("targets", {}).items()}
-    for side, root, current_root in (("source", reviewed_source_docs, current_source_docs),
-                                      ("target", reviewed_target_docs, current_target_docs)):
-        for path in sorted(root.rglob("*.md")):
-            rel = str(path.relative_to(root))
-            source_rel = rel if side == "source" else source_for_target.get(rel)
-            if source_rel not in plan["chapters"]:
-                continue
-            lines = path.read_text(encoding="utf-8").splitlines()
-            current_path = current_root / rel
-            current_structured = {_content_digest(line) for line in current_path.read_text(encoding="utf-8").splitlines()
-                                  if _structural_marker(line)} if current_path.is_file() else set()
-            planned_labels = {normal(entry[side]) for entry in plan["chapters"][source_rel]}
-            reviewed_lines = [(index, line, _content_digest(line)) for index, line in enumerate(lines)]
-            reviewed_structured = {digest for _, line, digest in reviewed_lines if _structural_marker(line)}
-            records = [{"digest": digest, "position": round(index / max(len(lines), 1), 6),
-                        "marker": _structural_marker(line)}
-                       for index, line, digest in reviewed_lines
-                       if digest and (digest in reviewed_structured or digest in current_structured
-                                      or normal(label(line)) in planned_labels)]
-            reviewed[side][source_rel] = records
-            counts[f"{side}_lines"] += len(records)
-    plan["reviewed"] = reviewed
+    decisions = json.loads(decisions_path.read_text(encoding="utf-8"))
+    if not isinstance(decisions, list):
+        raise ValueError("review decisions must be a JSON array")
+    pending: dict[Path, list[str]] = {}
+    seen: set[tuple[str, str, int]] = set()
+    reviewed = plan.setdefault("reviewed", {"source": {}, "target": {}})
+    residual_lines: dict[tuple[str, str], set[int]] = {}
+    for chapter, target_rel in plan["targets"].items():
+        source_path, target_path = source_docs / chapter, target_docs / target_rel
+        findings = compare_structure(source_path.read_text(encoding="utf-8"),
+                                     target_path.read_text(encoding="utf-8"), source_path, target_path)
+        for side, field in (("source", "expected"), ("target", "actual")):
+            residual_lines[side, chapter] = {finding[field]["line"] for finding in findings if finding[field]}
+    for decision in decisions:
+        side, chapter = decision["side"], decision["chapter"]
+        if side not in {"source", "target"} or chapter not in plan["chapters"]:
+            raise ValueError("review decision has an unknown side or chapter")
+        rel = chapter if side == "source" else plan["targets"][chapter]
+        root = source_docs if side == "source" else target_docs
+        path = root / rel
+        lines = pending.setdefault(path, path.read_text(encoding="utf-8").splitlines())
+        line_number = decision["line"]
+        key = side, chapter, line_number
+        if key in seen or not isinstance(line_number, int) or not 1 <= line_number <= len(lines):
+            raise ValueError("review decision line must be unique and in range")
+        seen.add(key)
+        if line_number not in residual_lines[side, chapter]:
+            raise ValueError("review decision must name a residual structure finding")
+        marker = decision["marker"]
+        if marker not in {"", "- ", "## ", "### ", "#### ", "##### ", "###### "}:
+            raise ValueError("review decision has an unsupported marker")
+        reason, page = decision["reason"], decision["pdf_page"]
+        if not isinstance(reason, str) or not reason.strip() or not isinstance(page, int) or page < 1:
+            raise ValueError("review decision needs a PDF page and reason")
+        index = line_number - 1
+        if label(lines[index]) != decision["text"]:
+            raise ValueError("review decision text changed; inspect the line again")
+        digest = _content_digest(lines[index])
+        if not digest:
+            raise ValueError("review decision line has no content")
+        record = {"digest": digest, "position": round(index / max(len(lines), 1), 6),
+                  "marker": marker, "pdf_page": page, "reason": reason.strip(),
+                  "text": decision["text"]}
+        reviewed[side].setdefault(chapter, []).append(record)
+        lines[index] = marker + label(lines[index])
+    for path, lines in pending.items():
+        path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    plan["applied"] = {"source_sha256": _tree_digest(source_docs),
+                       "target_sha256": _tree_digest(target_docs)}
     plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return dict(counts)
+    return {"reviewed_overrides": len(decisions)}
 
 
 def front_title(lines: list[str]) -> str:
@@ -280,6 +303,8 @@ def _match_cost(source: dict, target: dict, terms: list[tuple[str, str]]) -> flo
     score = distance * 0.85
     if target["heading"]:
         score -= 1.2
+    if source.get("source_level"):
+        score += -3.0 if target["heading"] else 1.5
     if normal(english) in normal(chinese):
         score -= 7
     else:
@@ -344,6 +369,79 @@ def _source_candidates(source: list[str], roles: list[PdfRole]) -> list[dict]:
         selected.append({"block": index, "text": label(block), "page": role.page,
                          "size": role.size, "kind": role.kind, "x": role.x, "y": role.y})
     return sorted(selected, key=lambda item: item["block"])
+
+
+def _text_source_candidates(source: list[str], relative_path: str = "") -> tuple[list[dict], list[dict]]:
+    """Read existing Markdown structure before asking the PDF about glyphs."""
+    blocks, _ = paragraphs(source)
+    title = normal(front_title(source))
+    parts = Path(relative_path).with_suffix("").parts
+    route = normal(parts[-2] if parts and parts[-1] == "index" and len(parts) > 1 else parts[-1]) if parts else ""
+    certain: list[dict] = []
+    ambiguous: list[dict] = []
+    for index, block in enumerate(blocks):
+        if "\n" in block:
+            continue
+        match = HEADING.match(block)
+        marked = MARKER.match(block)
+        if not match and not marked:
+            continue
+        text = label(block)
+        normalized = normal(text)
+        if (not normalized or normalized == title or len(text) > 76 or "](" in text
+                or (len(route) >= 5 and abs(len(normalized) - len(route)) <= 4
+                    and SequenceMatcher(None, normalized, route).ratio() >= 0.77)):
+            continue
+        # A sentence or an OCR paragraph promoted to H1 is prose, not a title.
+        if len(text.split()) > 11 or (marked and text.endswith((".", "。", "!", "！"))):
+            continue
+        item = {"block": index, "text": text, "source_level": len(match.group(1)) if match else None,
+                "marker": bool(marked), "expected": float(index)}
+        if marked and (len(text.split()) <= 1 or text.endswith((":", "：", "?", "？"))):
+            ambiguous.append(item)
+        else:
+            certain.append(item)
+    return certain, ambiguous
+
+
+def _text_target_candidates(blocks: list[str]) -> list[dict]:
+    selected = []
+    for index, block in enumerate(blocks):
+        if not _candidate(block):
+            continue
+        text = label(block)
+        heading = bool(HEADING.match(block))
+        listed = bool(LIST.match(block))
+        if len(text) > (76 if heading else 30) or (not heading and text.endswith(("。", "！", ".", "!"))):
+            continue
+        selected.append({"block": index, "text": text, "heading": heading,
+                         "level": len(HEADING.match(block).group(1)) if heading else None,
+                         "listed": listed})
+    return selected
+
+
+def _block_page(blocks: list[str], index: int, first_page: int) -> int:
+    for block in reversed(blocks[:index + 1]):
+        if match := IMAGE_PAGE.search(block):
+            return int(match.group(1))
+    return first_page
+
+
+def _text_pairs(source: list[dict], target: list[dict], terms: list[tuple[str, str]]) -> tuple[list[tuple[int, int]], list[int]]:
+    """Pair short standalone labels in order, bounded by shared media positions."""
+    pairs, missing = _pair_candidates(source, target, terms)
+    accepted = []
+    for source_index, target_index in pairs:
+        left, right = source[source_index], target[target_index]
+        distance = abs(left["expected"] - right["block"])
+        if distance > 4 and _match_cost(left, right, terms) > 1:
+            missing.append(source_index)
+            continue
+        if right["listed"] and not left["marker"]:
+            missing.append(source_index)
+            continue
+        accepted.append((source_index, target_index))
+    return accepted, sorted(missing)
 
 
 def _corroborated_display_candidates(source_blocks: list[str], target_blocks: list[str],
@@ -412,8 +510,8 @@ def derive_layout_plan(source_docs: Path, translated_docs: Path, pdf_path: Path,
                        plan_path: Path) -> dict:
     import pymupdf
 
-    plan: dict = {"version": 1, "pdf_sha256": hashlib.sha256(pdf_path.read_bytes()).hexdigest(),
-                  "chapters": {}, "spreads": {}, "lists": {}, "unresolved": []}
+    plan: dict = {"version": 2, "pdf_sha256": hashlib.sha256(pdf_path.read_bytes()).hexdigest(),
+                  "chapters": {}, "spreads": {}, "unresolved": [], "pdf_tiebreaks": []}
     terms = _approved_terms(glossary)
     paired_paths = match_chapter_paths(source_docs, translated_docs, target_pages)
     with pymupdf.open(pdf_path) as pdf:
@@ -427,40 +525,65 @@ def derive_layout_plan(source_docs: Path, translated_docs: Path, pdf_path: Path,
             target_lines = target_path.read_text(encoding="utf-8").splitlines()
             source_blocks, _ = paragraphs(source_lines)
             target_blocks, _ = paragraphs(target_lines)
-            roles = _pdf_roles(pdf, tuple(page_range))
-            candidates = _source_candidates(source_lines, roles)
+            anchors = _anchors(source_blocks, target_blocks)
+            target_candidates = _text_target_candidates(target_blocks)
+            certain, ambiguous = _text_source_candidates(source_lines, rel)
+            for item in certain + ambiguous:
+                item["expected"] = _position(item["block"], anchors)
+                item["page_title"] = front_title(target_lines)
+            # PDF typography decides only short glyph labels that the paired
+            # Markdown leaves equally plausible as a heading or a list item.
+            roles = _pdf_roles(pdf, tuple(page_range)) if ambiguous or any(
+                block.startswith(("# ", "## ", "### ")) for block in source_blocks) else []
+            for item in ambiguous:
+                nearby = [candidate for candidate in target_candidates
+                          if abs(candidate["block"] - item["expected"]) <= 2]
+                if len(nearby) == 1 and nearby[0]["heading"]:
+                    certain.append(item)
+                    continue
+                if len(nearby) == 1 and nearby[0]["listed"]:
+                    continue
+                matches = [role for role in roles if normal(role.text) == normal(item["text"])]
+                evidence_page = matches[0].page if matches else _block_page(source_blocks, item["block"], page_range[0])
+                plan["pdf_tiebreaks"].append({"chapter": rel, "source": item["text"],
+                                               "pdf_page": evidence_page})
+                if any(role.kind in {"heading", "display"} for role in matches):
+                    certain.append(item)
+                elif not matches:
+                    plan["unresolved"].append({"chapter": rel, "source": item["text"],
+                                               "pdf_page": evidence_page,
+                                               "reason": "short glyph label has no text or PDF role match"})
+            candidates = sorted(certain, key=lambda item: item["block"])
             spread = _spread_evidence(roles)
             if spread:
                 plan["spreads"][rel] = spread
-            bullets = [asdict(role) for role in roles if role.kind == "list"]
-            if bullets:
-                plan["lists"][rel] = bullets
-            anchors = _anchors(source_blocks, target_blocks)
-            candidates = sorted(candidates + _corroborated_display_candidates(
-                source_blocks, target_blocks, roles, anchors, terms, candidates),
-                key=lambda item: item["block"])
-            for candidate in candidates:
-                candidate["expected"] = _position(candidate["block"], anchors)
-                candidate["page_title"] = front_title(target_lines)
-            target_candidates = [{"block": index, "text": label(block), "heading": bool(HEADING.match(block))}
-                                 for index, block in enumerate(target_blocks) if _candidate(block)]
-            pairs, missing = _pair_candidates(candidates, target_candidates, terms)
+            pairs, missing = _text_pairs(candidates, target_candidates, terms)
             entries: list[dict] = []
             prior: list[dict] = []
             for source_index, target_index in pairs:
                 source_item, target_item = candidates[source_index], target_candidates[target_index]
-                level = _level(source_item, prior)
+                matched_role = next((role for role in roles if normal(role.text) == normal(source_item["text"])
+                                     and role.kind in {"heading", "display"}), None)
+                if source_item["source_level"]:
+                    level = source_item["source_level"]
+                elif target_item["level"] and target_item["level"] > 1:
+                    level = target_item["level"]
+                else:
+                    previous_level = prior[-1]["level"] if prior else 0
+                    level = 3 if previous_level == 2 else 2
                 source_item["level"] = level
                 prior.append(source_item)
                 entry = {"source": source_item["text"], "target": target_item["text"], "level": level,
                          "source_block": source_item["block"], "target_block": target_item["block"],
-                         "pdf": {key: source_item[key] for key in ("page", "size", "kind", "x", "y")},
+                         "pdf": (asdict(matched_role) if matched_role else
+                                 {"page": page_range[0], "size": 0, "kind": "text", "x": 0, "y": 0}),
                          "alignment_cost": round(_match_cost(source_item, target_item, terms), 2)}
                 entries.append(entry)
             plan["chapters"][rel] = entries
             plan.setdefault("targets", {})[rel] = target_rel
             plan["unresolved"].extend({"chapter": rel, "source": candidates[index]["text"],
-                                       "pdf_page": candidates[index]["page"], "reason": "no structural match"}
+                                       "pdf_page": _block_page(source_blocks, candidates[index]["block"], page_range[0]),
+                                       "reason": "no structural match"}
                                       for index in missing)
     plan_path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(plan, ensure_ascii=False, indent=2) + "\n"
@@ -575,6 +698,128 @@ def _strip_title_headings(lines: list[str]) -> int:
         if HEADING.match(line) and normal(visible) == title:
             lines[index] = ""
             changed += 1
+    return changed
+
+
+def _strip_source_title_headings(source: list[str], target: list[str]) -> int:
+    """Keep a source page heading when a distinct translated heading occupies it."""
+    title = normal(front_title(source))
+    source_blocks, source_starts = paragraphs(source)
+    target_blocks, _ = paragraphs(target)
+    anchors = _anchors(source_blocks, target_blocks)
+    changed = 0
+    for block_index, block in enumerate(source_blocks):
+        match = HEADING.match(block)
+        if not match or normal(label(block)) != title:
+            continue
+        expected = _position(block_index, anchors)
+        level = len(match.group(1))
+        counterpart = any(HEADING.match(other) and len(HEADING.match(other).group(1)) == level
+                          and abs(index - expected) <= 2
+                          for index, other in enumerate(target_blocks))
+        if not counterpart:
+            source[source_starts[block_index]] = ""
+            changed += 1
+    return changed
+
+
+def _demote_prose_headings(lines: list[str]) -> int:
+    changed = 0
+    for index, line in enumerate(lines):
+        match = HEADING.match(line)
+        if not match:
+            continue
+        text = match.group(2)
+        if (len(text) >= 80 and text.endswith((".", "。", "!", "！", "?", "？"))) or re.fullmatch(
+                r"(?:第\s*\d+\s*章|Chapter\s+\d+)", text, re.IGNORECASE):
+            lines[index] = text
+            changed += 1
+    return changed
+
+
+def _clean_remaining_glyphs(lines: list[str]) -> int:
+    """Preserve words in glyph lines whose paired list role is unproved."""
+    changed = 0
+    for index, line in enumerate(lines):
+        if "\u0094" not in line and "\u0095" not in line:
+            continue
+        parts = [part.strip() for part in re.split(r"[\u0094\u0095]", line) if part.strip()]
+        cleaned = "；".join(parts)
+        if cleaned != line:
+            lines[index] = cleaned
+            changed += 1
+    return changed
+
+
+def _join_lowercase_list_tails(lines: list[str]) -> int:
+    changed = 0
+    for index, line in enumerate(lines):
+        if not re.match(r"^- [a-z]", line):
+            continue
+        previous = next((lines[j] for j in range(index - 1, max(-1, index - 3), -1)
+                         if lines[j].strip()), "")
+        if previous and not previous.startswith(("#", "-", "|", "!")) and not previous.endswith((".", "!", "?", ":")):
+            lines[index] = line[2:]
+            changed += 1
+    return changed
+
+
+def _align_unpaired_h1(source: list[str], target: list[str], source_path: Path,
+                       target_path: Path) -> int:
+    changed = 0
+    findings = compare_structure("\n".join(source), "\n".join(target), source_path, target_path)
+    for finding in findings:
+        expected, actual = finding["expected"], finding["actual"]
+        if not actual or actual["kind"] != "heading" or actual["detail"]["level"] != 1:
+            continue
+        index = actual["line"] - 1
+        if not target[index].startswith("# "):
+            continue
+        content = target[index][2:]
+        if expected and expected["kind"] == "list_item":
+            target[index] = "- " + content
+        elif expected and expected["kind"] == "heading":
+            target[index] = "#" * expected["detail"]["level"] + " " + content
+        else:
+            target[index] = content
+        changed += 1
+    return changed
+
+
+def _align_short_label_lists(source: list[str], target: list[str], source_path: Path,
+                             target_path: Path) -> int:
+    """Match a short orphan label to its translated standalone label."""
+    source_blocks, source_starts = paragraphs(source)
+    target_blocks, target_starts = paragraphs(target)
+    anchors = _anchors(source_blocks, target_blocks)
+    changed = 0
+    for finding in compare_structure("\n".join(source), "\n".join(target), source_path, target_path):
+        expected, actual = finding["expected"], finding["actual"]
+        if not expected or actual or expected["kind"] != "list_item":
+            continue
+        source_line = expected["line"] - 1
+        match = LIST.match(source[source_line])
+        if not match or len(match.group(3)) > 24 or len(match.group(3).split()) > 3:
+            continue
+        source_block = next((index for index, start in enumerate(source_starts) if start == source_line), None)
+        if source_block is None:
+            continue
+        prior = next((HEADING.match(source[index]) for index in range(source_line - 1, max(-1, source_line - 10), -1)
+                      if HEADING.match(source[index])), None)
+        if prior is None:
+            continue
+        expected_target = _position(source_block, anchors)
+        choices = [(abs(index - expected_target), index) for index, block in enumerate(target_blocks)
+                   if abs(index - expected_target) <= 2 and "\n" not in block
+                   and not block.startswith(("#", "-", "|", "!", "<"))
+                   and 1 <= len(block) <= 16 and not block.endswith(("。", "！", "？"))]
+        if len(choices) != 1:
+            continue
+        target_line = target_starts[choices[0][1]]
+        level = len(prior.group(1))
+        source[source_line] = "#" * level + " " + match.group(3)
+        target[target_line] = "#" * level + " " + target[target_line]
+        changed += 1
     return changed
 
 
@@ -726,7 +971,9 @@ def repair_paired_layout(source_docs: Path, translated_docs: Path, pdf_path: Pat
             source_path, target_path = source_docs / rel, translated_docs / target_rel
             if not source_path.is_file() or not target_path.is_file():
                 continue
+            prior_stats = stats.copy()
             original_s, original_t = source_path.read_text(encoding="utf-8"), target_path.read_text(encoding="utf-8")
+            initial_findings = len(compare_structure(original_s, original_t, source_path, target_path))
             source, target = original_s.splitlines(), original_t.splitlines()
             for entry in entries:
                 stats["headings_aligned"] += _set_label(source, entry["source"], entry["level"], entry["source_block"])
@@ -735,8 +982,8 @@ def repair_paired_layout(source_docs: Path, translated_docs: Path, pdf_path: Pat
                 source, plan.get("spreads", {}).get(rel, []))
             stats["translated_spread_callouts_formatted"] += _format_translated_spread(
                 target, entries, plan.get("spreads", {}).get(rel, []))
-            stats["paired_titles_removed"] += _strip_title_headings(source)
             stats["paired_titles_removed"] += _strip_title_headings(target)
+            stats["paired_titles_removed"] += _strip_source_title_headings(source, target)
             surviving_targets = {normal(label(line)) for line in target if HEADING.match(line)}
             stats["paired_titles_removed"] += _strip_source_route_titles(
                 source, rel, {normal(entry["source"]) for entry in entries
@@ -753,9 +1000,27 @@ def repair_paired_layout(source_docs: Path, translated_docs: Path, pdf_path: Pat
                 target, reviewed.get("target", {}).get(rel, []))
             stats["paired_glyph_lists_recovered"] += _restore_paired_glyph_lists(source, target)
             stats["unproved_list_tails_joined"] += _join_unproved_list_continuations(source)
+            stats["unproved_list_tails_joined"] += _join_lowercase_list_tails(source)
             stats["post_spread_lists_aligned"] += _align_post_spread_list(
                 source, target, len(plan.get("spreads", {}).get(rel, [])))
+            stats["unpaired_h1_aligned"] += _align_unpaired_h1(source, target, source_path, target_path)
+            stats["short_labels_aligned"] += _align_short_label_lists(source, target, source_path, target_path)
+            stats["prose_headings_demoted"] += _demote_prose_headings(source)
+            stats["prose_headings_demoted"] += _demote_prose_headings(target)
             revised_s, revised_t = "\n".join(source).rstrip() + "\n", "\n".join(target).rstrip() + "\n"
+            if len(compare_structure(revised_s, revised_t, source_path, target_path)) > initial_findings:
+                stats = prior_stats
+                source, target = original_s.splitlines(), original_t.splitlines()
+                stats["paired_titles_removed"] += _strip_title_headings(target)
+                stats["paired_titles_removed"] += _strip_source_route_titles(source, rel, set())
+                stats["remaining_glyphs_cleaned"] += _clean_remaining_glyphs(target)
+                revised_s, revised_t = "\n".join(source).rstrip() + "\n", "\n".join(target).rstrip() + "\n"
+                if len(compare_structure(revised_s, revised_t, source_path, target_path)) > initial_findings:
+                    source, target = original_s.splitlines(), original_t.splitlines()
+                    stats = prior_stats
+                    stats["remaining_glyphs_cleaned"] += _clean_remaining_glyphs(target)
+                    revised_s, revised_t = original_s, "\n".join(target).rstrip() + "\n"
+                stats["chapters_preserved"] += 1
             if revised_s != original_s:
                 source_path.write_text(revised_s, encoding="utf-8")
                 stats["source_files_changed"] += 1

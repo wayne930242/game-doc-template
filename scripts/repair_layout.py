@@ -15,9 +15,10 @@ from functools import lru_cache
 from pathlib import Path
 
 from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, repair_d66_tables, strip_duplicate_title, strip_page_furniture
-from _paired_layout import _format_translated_spread, _pdf_roles, add_reviewed_layout, derive_layout_plan, layout_plan_applied, match_chapter_paths, repair_paired_layout
+from _paired_layout import _format_translated_spread, _pdf_roles, _tree_digest, add_reviewed_decisions, derive_layout_plan, layout_plan_applied, match_chapter_paths, repair_paired_layout
 from generate_nav import deployment_base_path, regenerate
 from split_chapters import build_page_text_stats, extract_pages, group_images_by_page, normalize_files, write_meta_yml
+from validate_translation_structure import compare_structure
 
 IMAGE_RE = re.compile(r"(?m)^!\[[^\]]*\]\(([^)]+)\)\s*$")
 PRINTED_REF_RE = re.compile(r"第\s*(\d{1,3})\s*頁")
@@ -351,6 +352,12 @@ def _update_group_titles(project_root: Path, chapters: dict, leaves: list[tuple[
 
 
 def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str, int]:
+    docs = project_root / "docs/src/content/docs"
+    plan_path = project_root / "data/layout-repair.json"
+    if plan_path.is_file():
+        applied = json.loads(plan_path.read_text(encoding="utf-8")).get("applied", {})
+        if applied.get("target_sha256") == _tree_digest(docs):
+            return {"already_applied": 1}
     config_path = project_root / "chapters.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     chapters = config["chapters"]
@@ -370,7 +377,6 @@ def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str,
     dice = d66_pages(manifest)
     pairs = d66_pair_pages(manifest)
     stats = Counter()
-    docs = project_root / "docs/src/content/docs"
     toc_labels: dict[str, str] = {}
     offset = 0
     first_path = docs / f"{leaves[0][0]}.md" if leaves else None
@@ -432,15 +438,13 @@ def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str,
     return dict(stats)
 
 
-def repair_staged_source(project_root: Path, source_docs: Path) -> dict[str, int]:
-    """Apply the same source-backed image, dice, and furniture rules to staged English.
+def _prepare_staged_source(project_root: Path, source_docs: Path) -> dict[str, int]:
+    """Clean a writable English copy before matching its blocks to translation.
 
     The staging tree is an existing translation baseline, so this edits a caller
     supplied copy in place and leaves the synced staging directory untouched.
     """
     target_docs = project_root / "docs/src/content/docs"
-    if layout_plan_applied(project_root / "data/layout-repair.json", source_docs, target_docs):
-        return {"already_applied": 1}
     config = json.loads((project_root / "chapters.json").read_text(encoding="utf-8"))
     for section in config["chapters"].values():
         section["files"] = normalize_files(section.get("files", {}))
@@ -493,13 +497,26 @@ def repair_staged_source(project_root: Path, source_docs: Path) -> dict[str, int
             body, count = recover_english_headings(body, candidates)
             stats["headings_recovered"] += count
         body = strip_page_furniture(body)
-        body = strip_duplicate_title(body, front_title(original))
         revised = front + "\n" + body.strip() + "\n"
         if revised != original:
             path.write_text(revised, encoding="utf-8")
             stats["files_changed"] += 1
+    return dict(stats)
+
+
+def repair_staged_source(project_root: Path, source_docs: Path) -> dict[str, int]:
+    target_docs = project_root / "docs/src/content/docs"
+    if layout_plan_applied(project_root / "data/layout-repair.json", source_docs, target_docs):
+        return {"already_applied": 1}
+    stats = Counter(_prepare_staged_source(project_root, source_docs))
+    config = json.loads((project_root / "chapters.json").read_text(encoding="utf-8"))
+    for section in config["chapters"].values():
+        section["files"] = normalize_files(section.get("files", {}))
+    pages = {f"{slug}.md": tuple(entry["pages"])
+             for slug, entry in chapter_leaves(config["chapters"])}
+    pdf = project_root / "data/pdfs" / (Path(config.get("source", "")).stem.removesuffix("_pages") + ".pdf")
     stats.update(repair_paired_layout(
-        source_docs, target_docs, pdf, target_pages,
+        source_docs, target_docs, pdf, pages,
         project_root / "glossary.json", project_root / "data/layout-repair.json"))
     return dict(stats)
 
@@ -595,8 +612,8 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="Report publication-blocking layout artifacts")
     parser.add_argument("--staged-source", type=Path, help="Repair a writable copy of staged English chapters")
     parser.add_argument("--derive-layout-plan", action="store_true", help="Write PDF-backed layout evidence into project data")
-    parser.add_argument("--reviewed-source", type=Path, help="PDF-reviewed English chapters for layout-plan derivation")
-    parser.add_argument("--reviewed-target", type=Path, help="PDF-reviewed translated chapters for layout-plan derivation")
+    parser.add_argument("--structure-report", action="store_true", help="Report paired chapter structure findings")
+    parser.add_argument("--reviewed-decisions", type=Path, help="Apply individually PDF-checked residual decisions")
     parser.add_argument("--source-baseline", type=Path, help="Read-only staging tree used to corroborate lost headings")
     args = parser.parse_args()
     project_root = args.project_root.resolve()
@@ -606,9 +623,32 @@ def main() -> int:
             print(issue)
         print(f"layout issues: {len(issues)}")
         return 1 if issues else 0
+    if args.structure_report:
+        if not args.staged_source:
+            parser.error("--structure-report requires --staged-source")
+        plan = json.loads((project_root / "data/layout-repair.json").read_text(encoding="utf-8"))
+        source_root, target_root = args.staged_source.resolve(), project_root / "docs/src/content/docs"
+        counts = {target: len(compare_structure((source_root / source).read_text(encoding="utf-8"),
+                                                 (target_root / target).read_text(encoding="utf-8"),
+                                                 source_root / source, target_root / target))
+                  for source, target in sorted(plan["targets"].items())}
+        print(json.dumps({"chapters": counts, "total": sum(counts.values()),
+                          "unresolved": len(plan.get("unresolved", [])),
+                          "pdf_tiebreaks": len(plan.get("pdf_tiebreaks", [])),
+                          "reviewed_overrides": sum(len(records) for side in plan.get("reviewed", {}).values()
+                                                    for records in side.values())}, ensure_ascii=False, indent=2))
+        return 0
+    if args.reviewed_decisions and not args.derive_layout_plan and not args.staged_source:
+        parser.error("--reviewed-decisions requires --staged-source")
+    if args.reviewed_decisions and not args.derive_layout_plan:
+        result = add_reviewed_decisions(project_root / "data/layout-repair.json",
+                                        args.reviewed_decisions.resolve(), args.staged_source.resolve(),
+                                        project_root / "docs/src/content/docs")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
     if args.derive_layout_plan:
-        if not args.staged_source or bool(args.reviewed_source) != bool(args.reviewed_target):
-            parser.error("--derive-layout-plan requires --staged-source and both reviewed paths together")
+        if not args.staged_source or args.reviewed_decisions:
+            parser.error("--derive-layout-plan requires --staged-source without reviewed decisions")
         config = json.loads((project_root / "chapters.json").read_text(encoding="utf-8"))
         for section in config["chapters"].values():
             section["files"] = normalize_files(section.get("files", {}))
@@ -616,13 +656,17 @@ def main() -> int:
                  for slug, entry in chapter_leaves(config["chapters"])}
         pdf = project_root / "data/pdfs" / (Path(config["source"]).stem.removesuffix("_pages") + ".pdf")
         plan = project_root / "data/layout-repair.json"
+        try:
+            if layout_plan_applied(plan, args.staged_source.resolve(), project_root / "docs/src/content/docs"):
+                print(json.dumps({"already_applied": 1}, ensure_ascii=False))
+                return 0
+        except ValueError:
+            pass  # Updated synced content requires a fresh PDF-backed plan.
+        prepared = _prepare_staged_source(project_root, args.staged_source.resolve())
         derived = derive_layout_plan(args.staged_source.resolve(), project_root / "docs/src/content/docs",
                                      pdf, pages, project_root / "glossary.json", plan)
-        stats = {"chapters": len(derived["chapters"]), "unresolved": len(derived["unresolved"])}
-        if args.reviewed_source:
-            stats.update(add_reviewed_layout(
-                plan, args.reviewed_source.resolve(), args.reviewed_target.resolve(),
-                args.staged_source.resolve(), project_root / "docs/src/content/docs"))
+        stats = {"chapters": len(derived["chapters"]), "unresolved": len(derived["unresolved"]),
+                 "pdf_tiebreaks": len(derived.get("pdf_tiebreaks", [])), "staged_source_files_prepared": prepared.get("files_changed", 0)}
         print(json.dumps(stats, ensure_ascii=False, indent=2))
         return 0
     if args.staged_source:

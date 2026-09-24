@@ -46,6 +46,55 @@ bun dev
 
 ---
 
+## 模板同步後修復 PDF 版面
+
+已翻譯專案同步模板腳本後，先從同步暫存區建立一份可寫的英文來源副本。每次同步只建立一次；重跑修復時沿用同一副本。
+
+```bash
+mkdir -p .state/layout-repair
+cp -R .state/template-sync/staging/docs/src/content/docs .state/layout-repair/source
+```
+
+依序在專案根目錄執行：
+
+```bash
+uv run python scripts/repair_layout.py --source-baseline .state/template-sync/staging/docs/src/content/docs
+uv run python scripts/repair_layout.py --staged-source .state/layout-repair/source --derive-layout-plan
+uv run python scripts/repair_layout.py --staged-source .state/layout-repair/source
+uv run python scripts/repair_layout.py --check
+uv run python scripts/repair_layout.py --staged-source .state/layout-repair/source --structure-report
+```
+
+第一步修復譯文的圖片、目錄、頁碼與頁首，並更新 `docs/src/content/docs/`、`chapters.json` 及導覽。第二步先清理可寫的英文副本，再以兩側 Markdown 結構、段落位置與術語建立 `data/layout-repair.json`；只有短標籤的標題／清單角色仍不明確時，才以 PDF 判定並記錄 `pdf_tiebreaks`。第三步依計畫修復英文副本與譯文，並在計畫中記錄兩側內容摘要。最後兩步只讀取結果，分別列出出版版面問題，以及各章結構問題、未配對數、PDF 仲裁數與審閱覆寫數。
+
+第二次執行修復指令時，若兩側內容摘要未變，計畫產生與套用步驟會回報 `already_applied`，不會再次寫入章節。若同步來源更新，重新建立可寫英文副本，再從第一步開始。
+
+只有當 PDF 仍無法判定殘餘行的結構時，才逐行檢查 PDF 與 `--structure-report` 指出的章節。把每項決定寫成 JSON 陣列，欄位包含來源章節相對路徑、`source`／`target`、目前行號、原行文字、要套用的 Markdown 標記、PDF 頁碼及判斷理由，例如：
+
+```json
+[
+  {
+    "chapter": "<source-chapter>.md",
+    "side": "target",
+    "line": 42,
+    "text": "<exact line text without marker>",
+    "marker": "### ",
+    "pdf_page": 12,
+    "reason": "PDF typography leaves this label ambiguous; adjacent section labels support H3."
+  }
+]
+```
+
+將檔案存於專案內，例如 `.state/layout-repair/reviewed-decisions.json`，執行：
+
+```bash
+uv run python scripts/repair_layout.py --staged-source .state/layout-repair/source --reviewed-decisions .state/layout-repair/reviewed-decisions.json
+```
+
+此步只接受結構檢查仍有差異的行，並把每行的 PDF 頁碼、理由與標記寫入 `data/layout-repair.json`，同時更新對應 Markdown。再次執行版面檢查與結構報告確認結果。
+
+---
+
 ## 自訂設定
 
 ### 網站標題與基本設定

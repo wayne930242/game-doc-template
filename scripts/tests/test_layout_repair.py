@@ -15,7 +15,7 @@ from _layout_cleanup import (
     strip_page_furniture,
     unique_placements,
 )
-from _paired_layout import PdfRole, _anchors, _corroborated_display_candidates, _format_translated_spread, _pair_candidates, _position, _restore_paired_glyph_lists, _set_label, _source_candidates, _tree_digest, layout_plan_applied, normal
+from _paired_layout import PdfRole, _align_short_label_lists, _align_unpaired_h1, _anchors, _corroborated_display_candidates, _format_translated_spread, _pair_candidates, _position, _restore_paired_glyph_lists, _set_label, _source_candidates, _tree_digest, add_reviewed_decisions, layout_plan_applied, normal
 from repair_layout import (
     layout_issues,
     recover_pdf_headings,
@@ -219,3 +219,33 @@ def test_applied_layout_plan_refuses_changed_content(tmp_path: Path):
         assert "derive a new PDF layout plan" in str(error)
     else:
         raise AssertionError("changed content must require a fresh plan")
+
+
+def test_text_pair_fixes_orphan_label_and_prose_h1_without_changing_words():
+    source = ["### Scenario", "", "Description.", "", "- Player", "", "A person plays."]
+    target = ["### 劇本", "", "說明。", "", "玩家", "", "玩家參與。"]
+    assert _align_short_label_lists(source, target, Path("source.md"), Path("target.md")) == 1
+    assert source[4] == "### Player" and target[4] == "### 玩家"
+    source = ["- A storm changes the land."]
+    target = ["# 風暴改變地貌。"]
+    assert _align_unpaired_h1(source, target, Path("source.md"), Path("target.md")) == 1
+    assert target == ["- 風暴改變地貌。"]
+
+
+def test_review_decisions_accept_only_explicit_residual_lines(tmp_path: Path):
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir(); target.mkdir()
+    (source / "chapter.md").write_text("## Section\n\nBody.\n", encoding="utf-8")
+    (target / "chapter.md").write_text("## 章節\n\n### Extra\n", encoding="utf-8")
+    plan_path = tmp_path / "layout-repair.json"
+    plan_path.write_text(json.dumps({"chapters": {"chapter.md": []},
+                                     "targets": {"chapter.md": "chapter.md"}}), encoding="utf-8")
+    decisions_path = tmp_path / "decisions.json"
+    decisions_path.write_text(json.dumps([{"side": "target", "chapter": "chapter.md", "line": 3,
+                                           "text": "Extra", "marker": "", "pdf_page": 7,
+                                           "reason": "The PDF cannot distinguish this small label from body text."}]),
+                              encoding="utf-8")
+    assert add_reviewed_decisions(plan_path, decisions_path, source, target) == {"reviewed_overrides": 1}
+    assert (target / "chapter.md").read_text(encoding="utf-8") == "## 章節\n\nExtra\n"
+    record = json.loads(plan_path.read_text(encoding="utf-8"))["reviewed"]["target"]["chapter.md"][0]
+    assert record["pdf_page"] == 7 and record["reason"].startswith("The PDF")
