@@ -227,7 +227,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
    | --- | --- |
    | `slug`、`base_path` | `deployment.base_path` |
    | `title`、`description` | `site.title`、`site.description` |
-   | `original_title` | `site.original_title`；未記錄時取 `data/pdfs/` 唯一 PDF 的檔名，否則為 `null` |
+   | `original_title` | `site.original_title`（必填，未記錄時匯出失敗） |
    | `cover` | `images.hero`（其次 `images.og`）存在時複製為 `cover.<副檔名>`，否則為 `null` |
    | `credits` | `credits.entries` |
    | `progress` | `data/translation-progress.json` 的完成章數／總章數 |

@@ -24,7 +24,6 @@ from generate_nav import deployment_base_path, update_astro_site_base, update_as
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STYLE_FILE = PROJECT_ROOT / "style-decisions.json"
 PROGRESS_FILE = PROJECT_ROOT / "data" / "translation-progress.json"
-PDF_DIR = PROJECT_ROOT / "data" / "pdfs"
 DOCS_DIR = PROJECT_ROOT / "docs"
 DIST_DIR = DOCS_DIR / "dist"
 ASTRO_CONFIG = DOCS_DIR / "astro.config.mjs"
@@ -72,17 +71,6 @@ def blog_base_path(style: dict[str, Any]) -> str:
     return base_path
 
 
-def original_title(style: dict[str, Any], pdf_dir: Path) -> str | None:
-    """Return site.original_title, else the title derived from the project's single source PDF."""
-    recorded = style.get("site", {}).get("original_title")
-    if recorded:
-        return recorded
-    pdfs = sorted(pdf_dir.glob("*.pdf")) if pdf_dir.is_dir() else []
-    if len(pdfs) != 1:
-        return None
-    return re.sub(r"[_\s]+", " ", pdfs[0].stem).strip() or None
-
-
 def cover_source(style: dict[str, Any], project_root: Path) -> Path | None:
     """Return the recorded hero (or OG) image when the file exists."""
     images = style.get("images", {})
@@ -106,7 +94,6 @@ def build_manifest(
     source_repo: str,
     updated_at: str,
     cover: str | None,
-    pdf_dir: Path,
 ) -> dict[str, Any]:
     """Assemble book.json from recorded project data."""
     base_path = blog_base_path(style)
@@ -115,10 +102,13 @@ def build_manifest(
     title = site.get("title")
     if not title:
         raise ExportError("site.title 未設定，請先執行 style_decisions.py set-site --title")
+    original_title = site.get("original_title")
+    if not original_title:
+        raise ExportError("site.original_title 未設定，請先執行 style_decisions.py set-site --original-title")
     return {
         "slug": slug,
         "title": title,
-        "original_title": original_title(style, pdf_dir),
+        "original_title": original_title,
         "description": site.get("description", ""),
         "base_path": f"{base_path}/",
         "cover": cover,
@@ -241,9 +231,7 @@ def run(args: argparse.Namespace) -> None:
         cover = f"{COVER_STEM}{cover_path.suffix.lower()}"
         shutil.copyfile(cover_path, args.out / cover)
 
-    manifest = build_manifest(
-        style, progress, source_repo=source_repo, updated_at=updated_at, cover=cover, pdf_dir=PDF_DIR
-    )
+    manifest = build_manifest(style, progress, source_repo=source_repo, updated_at=updated_at, cover=cover)
     (args.out / MANIFEST_NAME).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     count, size = tree_stats(args.out)

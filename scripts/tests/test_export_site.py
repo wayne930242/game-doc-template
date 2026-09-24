@@ -22,7 +22,7 @@ CONFIG = "import x from 'y';\n\nexport default defineConfig({\n\tmarkdown: {},\n
 def blog_style(**overrides):
     style = {
         "deployment": {"target": "blog", "base_path": "/books/kedamono-opera"},
-        "site": {"title": "暗獸歌劇", "description": "描述"},
+        "site": {"title": "暗獸歌劇", "original_title": "Kedamono Opera", "description": "描述"},
         "credits": {"entries": [{"role": "翻譯", "name": "洪偉"}], "show_on_homepage": True},
     }
     style.update(overrides)
@@ -38,21 +38,19 @@ PROGRESS = {
 }
 
 
-def make_manifest(style, tmp_path: Path, cover=None):
+def make_manifest(style, cover=None):
     return build_manifest(
         style,
         PROGRESS,
         source_repo="wayne930242/kedamono-opera",
         updated_at="2026-09-24T12:00:00+08:00",
         cover=cover,
-        pdf_dir=tmp_path,
     )
 
 
 class TestManifest:
-    def test_fields_derive_from_project_data(self, tmp_path):
-        (tmp_path / "Kedamono_Opera.pdf").write_bytes(b"%PDF")
-        manifest = make_manifest(blog_style(), tmp_path, cover="cover.jpg")
+    def test_fields_derive_from_project_data(self):
+        manifest = make_manifest(blog_style(), cover="cover.jpg")
         assert manifest == {
             "slug": "kedamono-opera",
             "title": "暗獸歌劇",
@@ -66,27 +64,21 @@ class TestManifest:
             "source_repo": "wayne930242/kedamono-opera",
         }
 
-    def test_recorded_original_title_wins_over_pdf_name(self, tmp_path):
-        (tmp_path / "Some_File.pdf").write_bytes(b"%PDF")
-        style = blog_style(site={"title": "暗獸歌劇", "original_title": "Kedamono Opera"})
-        assert make_manifest(style, tmp_path)["original_title"] == "Kedamono Opera"
+    def test_missing_original_title_fails(self):
+        with pytest.raises(ExportError, match="original_title"):
+            make_manifest(blog_style(site={"title": "暗獸歌劇"}))
 
-    def test_original_title_is_null_without_single_pdf(self, tmp_path):
-        (tmp_path / "A.pdf").write_bytes(b"%PDF")
-        (tmp_path / "B.pdf").write_bytes(b"%PDF")
-        assert make_manifest(blog_style(), tmp_path)["original_title"] is None
+    def test_cover_is_null_when_not_recorded(self):
+        assert make_manifest(blog_style())["cover"] is None
 
-    def test_cover_is_null_when_not_recorded(self, tmp_path):
-        assert make_manifest(blog_style(), tmp_path)["cover"] is None
-
-    def test_rejects_non_blog_target(self, tmp_path):
+    def test_rejects_non_blog_target(self):
         style = blog_style(deployment={"target": "root", "base_path": "/books/x"})
         with pytest.raises(ExportError, match="blog"):
-            make_manifest(style, tmp_path)
+            make_manifest(style)
 
-    def test_rejects_missing_title(self, tmp_path):
+    def test_rejects_missing_title(self):
         with pytest.raises(ExportError, match="site.title"):
-            make_manifest(blog_style(site={}), tmp_path)
+            make_manifest(blog_style(site={}))
 
 
 class TestCoverSource:
