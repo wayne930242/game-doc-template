@@ -20,6 +20,7 @@ You are planning chapter split configuration for one extracted markdown source.
 - Do not ask the user whether to split.
 - Build config compatible with `scripts/split_chapters.py`.
 - Use lowercase kebab-case ASCII for section/file slugs.
+- Top-level section slugs `index`, `404`, `_astro`, and `pagefind` are reserved: they collide with the site home page, the not-found page, or build output. Name a back-of-book index `book-index`.
 - Use semantic TOC-derived or heading-derived slugs for every file.
 - Never invent generic numeric-only file slugs or titles such as `1`, `2`, `3`, `part-1`, `part-2`, `一`, `二`, or `三` unless the source itself uses that numbered label as the real heading.
 - Preserve TOC order from source.

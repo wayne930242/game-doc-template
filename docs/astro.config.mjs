@@ -6,10 +6,9 @@ import starlightAutoSidebar from 'starlight-auto-sidebar';
 // ============================================
 // 遊戲文件設定
 // ============================================
-// TODO: 修改以下設定以符合您的遊戲
 
 const SITE_CONFIG = {
-	// 網站標題（顯示在導航列）
+	// 網站標題（顯示在導航列）：由 generate_nav.py 依 style-decisions.json 的 site.title 寫入
 	title: '遊戲規則文件',
 	// 預設語言
 	defaultLocale: 'zh-TW',

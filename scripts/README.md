@@ -60,8 +60,8 @@ tesseract --list-langs
 | `extract_pdf.py` | PDF／EPUB／圖片來源轉 Markdown，支援文字提取、OCR、opendataloader、圖片提取 |
 | `split_chapters.py` | 依 `chapters.json` 設定將 Markdown 拆分為多個章節檔案 |
 | `merge_multi.py` | 合併多份 `chapters_<name>.json` 為單一 `chapters.json` |
-| `generate_nav.py` | 依 `chapters.json` 產生首頁 `index.mdx` 並更新 `astro.config.mjs` 側邊欄與 `base` |
-| `export_site.py` | 以 `deployment.base_path` 建置網站，匯出靜態輸出與 `book.json` 供 blog 併入 `/books/<slug>/` |
+| `generate_nav.py` | 依 `chapters.json` 產生首頁 `index.mdx` 並更新 `astro.config.mjs` 側邊欄、`base` 與網站標題 |
+| `export_site.py` | 以 `deployment.base_path` 建置網站，匯出靜態輸出與 `book.json` 供 blog 併入 `/books/<slug>/`；`--archive` 另產生 release 封存檔 |
 | `clean_sample_data.py` | 清除範本／範例資料，供 `new-project` 自動執行或既有專案手動重置 |
 
 ### 術語
@@ -95,6 +95,9 @@ tesseract --list-langs
 | `merge_translated_list_continuations.py` | 依英文原文位置比對，合併已翻譯 Markdown 中被誤判為清單項目的斷行續句 |
 | `merge_translated_paragraph_continuations.py` | 依英文原文位置與結構錨點比對，合併已翻譯 Markdown 中被誤斷為兩個段落的斷行續句 |
 | `convert_translated_symbol_glyphs.py` | 依英文原文分類決策與結構錨點比對，轉換已翻譯 Markdown 中殘留的裝飾符號字型字元 |
+| `strip_artifact_headings.py` | 修復既有專案：移除提取結果、章節、譯稿與草稿中的版面裝飾標題（如 `###### iz`） |
+| `convert_web_images.py` | 修復既有專案：把瀏覽器無法顯示的提取圖片（如 `.jpx`）轉成 PNG，並更新 manifest 與 Markdown 引用 |
+| `rename_chapter.py` | 重新命名頂層章節 slug（如保留字 `index` → `book-index`），同步 `chapters.json`、進度、草稿 manifest、翻譯脈絡與內部連結 |
 | `draft.py` | 管理翻譯草稿檔（`path`／`chunk-path`／`writeback`／`clean`） |
 | `bilingual_prep.py` | 將來源英文 Markdown 轉換為含佔位符的雙語翻譯草稿 |
 

@@ -1,0 +1,74 @@
+name: Book Export
+
+# Builds the blog export on every push to main and publishes it as the asset
+# book-export.tar.gz of one rolling release. The blog's sync-books.mjs downloads
+# it with `"ref": "book-export"` in books.config.json.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: book-export
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: book-export
+
+jobs:
+  target:
+    runs-on: ubuntu-latest
+    outputs:
+      blog: ${{ steps.target.outputs.blog }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Only blog-deployed books export; the template and standalone deploys skip.
+      - name: Read deployment target
+        id: target
+        run: echo "blog=$(jq -r '.deployment.target == "blog"' style-decisions.json)" >> "$GITHUB_OUTPUT"
+
+  export:
+    needs: target
+    if: needs.target.outputs.blog == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Sync Python dependencies
+        run: uv sync --no-dev
+
+      - name: Install site dependencies
+        working-directory: docs
+        run: bun install --frozen-lockfile
+
+      - name: Build export archive
+        run: uv run python scripts/export_site.py --out "$RUNNER_TEMP/book" --archive "$RUNNER_TEMP/book-export.tar.gz"
+
+      - name: Publish to rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Rolling blog export of main at ${GITHUB_SHA}; the asset is replaced on every push."
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/book-export.tar.gz" --clobber
+            gh release edit "$RELEASE_TAG" --notes "$notes"
+          else
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/book-export.tar.gz" \
+              --target "$GITHUB_SHA" --title "Book export" --notes "$notes"
+          fi

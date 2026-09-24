@@ -14,11 +14,12 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 from typing import Any
 
 from _style_decisions_lib import load_and_validate_style_decisions
-from generate_nav import deployment_base_path, update_astro_site_base
+from generate_nav import deployment_base_path, update_astro_site_base, update_astro_site_title
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STYLE_FILE = PROJECT_ROOT / "style-decisions.json"
@@ -28,6 +29,8 @@ DOCS_DIR = PROJECT_ROOT / "docs"
 DIST_DIR = DOCS_DIR / "dist"
 ASTRO_CONFIG = DOCS_DIR / "astro.config.mjs"
 MANIFEST_NAME = "book.json"
+# Release asset name the blog's sync script downloads from each book repository.
+ARCHIVE_NAME = "book-export.tar.gz"
 COVER_STEM = "cover"
 
 # URL-bearing attributes in HTML and url() in CSS. A value starting with a single "/"
@@ -127,8 +130,8 @@ def build_manifest(
 
 
 def assert_config_synced(config_text: str, style: dict[str, Any]) -> None:
-    if update_astro_site_base(config_text, style) != config_text:
-        raise ExportError("astro.config.mjs 的 base 與 style-decisions.json 不一致，請先執行 uv run python scripts/generate_nav.py")
+    if update_astro_site_title(update_astro_site_base(config_text, style), style) != config_text:
+        raise ExportError("astro.config.mjs 的 base 或網站標題與 style-decisions.json 不一致，請先執行 uv run python scripts/generate_nav.py")
 
 
 def urls_outside_base(dist: Path, base_path: str) -> list[str]:
@@ -169,6 +172,29 @@ def prepare_out_dir(out: Path, clean: bool) -> None:
         shutil.rmtree(resolved)
 
 
+def write_archive(export_dir: Path, archive: Path) -> None:
+    """Pack the export directory's contents at the archive root, as the blog release contract expects."""
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive, "w:gz") as tar:
+        for path in sorted(export_dir.iterdir()):
+            tar.add(path, arcname=path.name)
+
+
+def check_blog_archive(archive: Path, slug: str) -> dict[str, Any]:
+    """Apply the blog sync script's checks (sync-books.mjs checkExport) to the archive root; return book.json."""
+    with tarfile.open(archive, "r:gz") as tar:
+        members = {member.name.removeprefix("./"): member for member in tar.getmembers()}
+        for required in ("index.html", MANIFEST_NAME):
+            if required not in members:
+                raise ExportError(f"{archive} 根目錄缺少 {required}")
+        manifest = json.loads(tar.extractfile(members[MANIFEST_NAME]).read().decode("utf-8"))
+    if manifest.get("slug") != slug:
+        raise ExportError(f"book.json slug 為 {manifest.get('slug')!r}，應為 {slug!r}")
+    if manifest.get("base_path") != f"/books/{slug}/":
+        raise ExportError(f"book.json base_path 為 {manifest.get('base_path')!r}，應為 '/books/{slug}/'")
+    return manifest
+
+
 def tree_stats(root: Path) -> tuple[int, int]:
     files = [path for path in root.rglob("*") if path.is_file()]
     return len(files), sum(path.stat().st_size for path in files)
@@ -178,6 +204,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build the site under the blog base path and export it with book.json.")
     parser.add_argument("--out", type=Path, required=True, help="Directory that receives the static site and book.json.")
     parser.add_argument("--clean", action="store_true", help="Replace the output directory when it is not empty.")
+    parser.add_argument(
+        "--archive",
+        type=Path,
+        help=f"Also pack the export as a tar.gz release asset (publish it as {ARCHIVE_NAME}).",
+    )
     return parser.parse_args()
 
 
@@ -191,6 +222,8 @@ def run(args: argparse.Namespace) -> None:
     source_repo = source_repo_from_remote(git_output("remote", "get-url", "origin"))
     updated_at = git_output("log", "-1", "--format=%cI")
 
+    if args.archive and args.archive.resolve().is_relative_to(args.out.resolve()):
+        raise ExportError(f"封存檔不可位於匯出目錄內：{args.archive}")
     prepare_out_dir(args.out, args.clean)
     build_site()
     offenders = urls_outside_base(DIST_DIR, base_path)
@@ -216,6 +249,10 @@ def run(args: argparse.Namespace) -> None:
     count, size = tree_stats(args.out)
     print(f"✓ 已匯出 {manifest['base_path']} → {args.out}")
     print(f"  檔案數 {count}，總大小 {size / 1024 / 1024:.1f} MiB")
+    if args.archive:
+        write_archive(args.out, args.archive)
+        check_blog_archive(args.archive, manifest["slug"])
+        print(f"✓ 已封存 → {args.archive}（{args.archive.stat().st_size / 1024 / 1024:.1f} MiB）")
 
 
 def main() -> None:

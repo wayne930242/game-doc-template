@@ -12,7 +12,9 @@ from export_site import (
     source_repo_from_remote,
     urls_outside_base,
 )
-from generate_nav import deployment_base_path, update_astro_site_base
+from generate_nav import deployment_base_path, update_astro_site_base, update_astro_site_title
+
+TEMPLATE_CONFIG = (Path(__file__).resolve().parents[2] / "docs" / "astro.config.mjs").read_text(encoding="utf-8")
 
 CONFIG = "import x from 'y';\n\nexport default defineConfig({\n\tmarkdown: {},\n});\n"
 
@@ -147,6 +149,28 @@ class TestBasePathConfig:
     def test_sync_check_fails_on_stale_config(self):
         with pytest.raises(ExportError, match="generate_nav"):
             assert_config_synced(CONFIG, blog_style())
+
+
+class TestSiteTitleConfig:
+    def test_writes_recorded_title_into_site_config(self):
+        result = update_astro_site_title(TEMPLATE_CONFIG, blog_style())
+        assert "\ttitle: '暗獸歌劇',\n" in result
+        assert "遊戲規則文件" not in result
+        assert "title: SITE_CONFIG.title," in result
+        assert update_astro_site_title(result, blog_style()) == result
+
+    def test_escapes_quotes_and_backslashes(self):
+        result = update_astro_site_title(TEMPLATE_CONFIG, {"site": {"title": "It's a \\ test"}})
+        assert "\ttitle: 'It\\'s a \\\\ test',\n" in result
+
+    def test_keeps_config_without_recorded_title(self):
+        assert update_astro_site_title(TEMPLATE_CONFIG, {}) == TEMPLATE_CONFIG
+
+    def test_sync_check_rejects_template_default_title(self):
+        with_base = update_astro_site_base(TEMPLATE_CONFIG, blog_style())
+        with pytest.raises(ExportError, match="網站標題"):
+            assert_config_synced(with_base, blog_style())
+        assert_config_synced(update_astro_site_title(with_base, blog_style()), blog_style())
 
 
 class TestUrlsOutsideBase:

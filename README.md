@@ -50,16 +50,14 @@ bun dev
 
 ### 網站標題與基本設定
 
-編輯 `docs/astro.config.mjs` 頂部的 `SITE_CONFIG`：
+網站標題記錄在 `style-decisions.json` 的 `site.title`（與 `book.json` 同一來源），由 `generate_nav.py` 寫入 `docs/astro.config.mjs` 頂部 `SITE_CONFIG.title`，不需手動編輯：
 
-```javascript
-const SITE_CONFIG = {
-  title: "您的遊戲名稱",
-  defaultLocale: "zh-TW",
-  localeLabel: "繁體中文",
-  allowIndexing: false, // SEO 設定
-};
+```bash
+uv run python scripts/style_decisions.py set-site --title "您的遊戲名稱"
+uv run python scripts/generate_nav.py
 ```
+
+`SITE_CONFIG` 的其他欄位（`defaultLocale`、`localeLabel`、`allowIndexing`）仍直接在 `docs/astro.config.mjs` 調整。
 
 ### 圖片資源
 
@@ -187,7 +185,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
    在 `docs/` 下執行 `bun dev`，檢查頁面、目錄、連結、圖片與主題樣式。
 
 10. 建置與部署  
-    完整執行 `translate all` 時會自動重建導覽、執行 `bun run build` 並驗證搜尋索引。確認後以 `uv run python scripts/export_site.py --out <dir>` 匯出到 blog；仍需獨立部署的專案才用 GitHub Pages 或 Vercel。詳見〈部署〉章節。
+    完整執行 `translate all` 時會自動重建導覽、執行 `bun run build` 並驗證搜尋索引。推送到 `main` 後由 `book-export` workflow 匯出並發布給 blog；仍需獨立部署的專案才用 GitHub Pages 或 Vercel。詳見〈部署〉章節。
 
 ---
 
@@ -221,7 +219,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
    uv run python scripts/export_site.py --out <dir> --clean  # 覆寫既有輸出
    ```
 
-   指令會先確認 `astro.config.mjs` 的 `base` 與 `style-decisions.json` 一致，接著執行 `bun run build`（含 zh-TW 搜尋後處理），再掃描所有 HTML／CSS，只要有網址跳出 `/books/<slug>/` 就中止並列出位置。通過後把靜態輸出複製到 `<dir>/`，並寫入 `<dir>/book.json`。結束時會印出檔案數與總大小（blog 的 Vercel 部署有檔案數限制）。
+   指令會先確認 `astro.config.mjs` 的 `base` 與網站標題與 `style-decisions.json` 一致，接著執行 `bun run build`（含 zh-TW 搜尋後處理），再掃描所有 HTML／CSS，只要有網址跳出 `/books/<slug>/` 就中止並列出位置。通過後把靜態輸出複製到 `<dir>/`，並寫入 `<dir>/book.json`。結束時會印出檔案數與總大小（blog 的 Vercel 部署有檔案數限制）。
 
 3. `book.json` 的欄位全部取自專案既有資料，不需逐專案手填：
 
@@ -236,7 +234,25 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
    | `updated_at` | 最後一次 commit 時間 |
    | `source_repo` | `git remote origin` 的 `owner/repo` |
 
-4. blog 端把 `<dir>/` 放到 `public/books/<slug>/`。匯出內容不含 `middleware.ts` 與 `api/`，密碼保護由 blog 負責。
+4. 發布給 blog。blog 的 `scripts/sync-books.mjs` 依 `books.config.json` 的 `ref` 下載每本書 GitHub release 的 `book-export.tar.gz`，解開到 `public/books/<slug>/`。匯出內容不含 `middleware.ts` 與 `api/`，密碼保護由 blog 負責。
+
+   `.github/workflows/book-export.yml` 在每次推送到 `main` 時執行 `export_site.py --archive`，把封存檔上傳到固定的 rolling release `book-export`：release 不存在時以該 commit 建立，已存在時覆寫其 `book-export.tar.gz`，不需要手動發布。blog 的 `books.config.json` 以這個 tag 指定：
+
+   ```json
+   { "slug": "<slug>", "repo": "<owner>/<repo>", "ref": "book-export" }
+   ```
+
+   - 權限：workflow 宣告 `permissions: contents: write`，以內建 `GITHUB_TOKEN` 建立 release 與上傳資產；不需額外 secret。若 repo 或組織把 Actions 的預設權限設為唯讀，需在 Settings → Actions → General → Workflow permissions 允許 workflow 使用宣告的寫入權限。
+   - 內容：tag `book-export` 只標示 rolling release，不隨每次推送移動；實際內容的 commit 寫在 release 說明，`book.json` 的 `updated_at` 為該 commit 時間。
+   - 只有 `style-decisions.json` 的 `deployment.target` 為 `blog` 時才匯出；模板本身與獨立部署的專案會略過。
+
+   本機也可產生同一個封存檔檢查內容：
+
+   ```bash
+   uv run python scripts/export_site.py --out <dir> --clean --archive <dir>.tar.gz
+   ```
+
+   `--archive` 把 `<dir>/` 的內容（含 `book.json`）直接放在封存檔根目錄（封存檔不可放在 `<dir>/` 內），並套用 blog 的檢查：根目錄有 `index.html` 與 `book.json`，`base_path` 為 `/books/<slug>/`。
 
 內文中手寫的絕對連結（例如 `fix-ref` 產生的跨頁連結）不會被 Astro 自動加上 `base`，必須含 `/books/<slug>` 前綴；匯出時的網址掃描會抓出遺漏。
 

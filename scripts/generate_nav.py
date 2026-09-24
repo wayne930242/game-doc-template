@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from _markdown_utils import yaml_safe
-from split_chapters import normalize_files
+from split_chapters import normalize_files, validate_section_slugs
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CHAPTERS_FILE = PROJECT_ROOT / "chapters.json"
@@ -342,6 +342,21 @@ def update_astro_site_base(config_text: str, style: dict) -> str:
     return SITE_BASE_PATTERN.sub(replacement, config_text, count=1)
 
 
+SITE_TITLE_PATTERN = re.compile(r"^(?P<lead>\ttitle: )'(?:[^'\\\n]|\\.)*',$", re.MULTILINE)
+
+
+def update_astro_site_title(config_text: str, style: dict) -> str:
+    """Set SITE_CONFIG.title from style-decisions.json.site.title (the same source as book.json).
+
+    Leaves the config unchanged when no site title is recorded.
+    """
+    title = style.get("site", {}).get("title")
+    if not title:
+        return config_text
+    literal = title.replace("\\", "\\\\").replace("'", "\\'")
+    return SITE_TITLE_PATTERN.sub(lambda match: f"{match['lead']}'{literal}',", config_text, count=1)
+
+
 def main() -> None:
     if not CHAPTERS_FILE.exists():
         print(f"❌ 找不到 {CHAPTERS_FILE}", file=sys.stderr)
@@ -357,6 +372,12 @@ def main() -> None:
     if not chapters:
         print("❌ chapters.json 中沒有章節資料", file=sys.stderr)
         raise SystemExit(1)
+
+    try:
+        validate_section_slugs(chapters)
+    except ValueError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
     # chapters.json 允許扁平斜線路徑鍵（如 "combat/actions"），實際輸出的文件樹
     # 由 split_chapters.py 透過 normalize_files() 展開後才落地；此處必須套用相同
@@ -381,11 +402,12 @@ def main() -> None:
             print(f"❌ {exc}：{ASTRO_CONFIG}", file=sys.stderr)
             raise SystemExit(1) from exc
         updated = update_astro_site_base(updated, style)
+        updated = update_astro_site_title(updated, style)
         if updated != original:
             ASTRO_CONFIG.write_text(updated, encoding="utf-8")
-            print(f"✓ 已更新側邊欄與 site/base 設定: {ASTRO_CONFIG}")
+            print(f"✓ 已更新側邊欄、site/base 與網站標題設定: {ASTRO_CONFIG}")
         else:
-            print("ℹ 側邊欄與 site/base 設定未變更")
+            print("ℹ 側邊欄、site/base 與網站標題設定未變更")
     else:
         print(f"⚠ 找不到 {ASTRO_CONFIG}", file=sys.stderr)
 

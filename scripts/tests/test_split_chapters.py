@@ -16,6 +16,7 @@ from split_chapters import (
     parse_args,
     resolve_config,
     split_chapters,
+    validate_section_slugs,
     write_meta_yml,
 )
 from pathlib import Path
@@ -50,6 +51,12 @@ class TestExtractPages:
     def test_no_page_markers(self):
         pages = extract_pages("Just some text without markers")
         assert pages == {}
+
+    def test_empty_last_page_marker_at_end_of_file(self):
+        # strip_artifact_headings trims the text, so a last page that held only
+        # an artifact heading (Kedamono Opera page 262) ends at its marker.
+        content = "<!-- PAGE 261 -->\n\n<!-- PAGE 262 -->"
+        assert extract_pages(content) == {261: "", 262: ""}
 
     def test_non_sequential_pages(self):
         content = (
@@ -573,3 +580,29 @@ class TestMainSideEffects:
         main()
 
         assert loaded == [config_path]
+
+
+# ---------------------------------------------------------------------------
+# validate_section_slugs
+# ---------------------------------------------------------------------------
+
+class TestValidateSectionSlugs:
+    @pytest.mark.parametrize("slug", ["index", "404", "_astro", "pagefind"])
+    def test_rejects_reserved_top_level_slug(self, slug):
+        with pytest.raises(ValueError, match=slug):
+            validate_section_slugs({"rules": {}, slug: {}})
+
+    def test_accepts_book_index_and_nested_index(self):
+        validate_section_slugs({"rules": {"files": {"index": {}}}, "book-index": {}})
+
+    def test_split_chapters_refuses_index_section(self, tmp_path):
+        source = tmp_path / "book_pages.md"
+        source.write_text("<!-- PAGE 1 -->\n\nIndex\n", encoding="utf-8")
+        config = {
+            "source": str(source),
+            "images": {"enabled": False},
+            "chapters": {"index": {"title": "Index", "files": {"index": {"title": "Index", "pages": [1, 1]}}}},
+        }
+        with pytest.raises(ValueError, match="book-index"):
+            split_chapters(config, tmp_path)
+        assert not (tmp_path / "docs").exists()

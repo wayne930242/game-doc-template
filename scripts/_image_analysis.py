@@ -11,6 +11,18 @@ except ImportError:
     pymupdf = None
 
 
+# Formats every browser displays. PDF-embedded images in any other format (JPEG 2000
+# `jpx`, JBIG2 `jb2`, ...) render empty on the site and are re-encoded as PNG.
+WEB_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+
+
+def pixmap_to_png(pixmap: "pymupdf.Pixmap") -> bytes:
+    """Encode a decoded image as PNG, converting non-gray/RGB colorspaces (e.g. CMYK) to RGB."""
+    if pixmap.colorspace is not None and pixmap.colorspace.n not in (1, 3):
+        pixmap = pymupdf.Pixmap(pymupdf.csRGB, pixmap)
+    return pixmap.tobytes("png")
+
+
 def compute_visual_hash(samples: list[int]) -> str | None:
     """根據灰階採樣建立簡單視覺指紋。"""
     if not samples:

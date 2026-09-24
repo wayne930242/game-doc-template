@@ -115,7 +115,7 @@ cp "<pdf_path>" data/pdfs/
 ```
 
 Update:
-- `docs/astro.config.mjs` title and (if public) GitHub social link
+- (if public) GitHub social link in `docs/astro.config.mjs`; the site title comes from `site.title`, which `generate_nav.py` writes into `SITE_CONFIG.title`
 - initialize and update `style-decisions.json` via scripts
 - `CLAUDE.md` project description
 
@@ -128,7 +128,7 @@ uv run python scripts/style_decisions.py set-repository \
   --visibility "<private_or_public>" \
   --url "<REPO_URL>" \
   --show-on-homepage <true_or_false>
-uv run python scripts/style_decisions.py set-site --original-title "$GAME_TITLE_EN"
+uv run python scripts/style_decisions.py set-site --title "$GAME_TITLE_ZH" --original-title "$GAME_TITLE_EN"
 uv run python scripts/style_decisions.py set-deployment \
   --target blog \
   --base-path "/books/<project_name>"

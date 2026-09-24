@@ -30,7 +30,7 @@ from _epub_lib import (
     extract_epub_with_pages,
     should_print_progress,
 )
-from _image_analysis import analyze_image_bytes
+from _image_analysis import WEB_IMAGE_EXTENSIONS, analyze_image_bytes, pixmap_to_png
 from _layout_lib import (
     detect_layout_profile,
     extract_page_text_pymupdf,
@@ -757,6 +757,9 @@ def extract_images(pdf_path: Path, output_dir: Path) -> list[dict]:
             base_image = doc.extract_image(xref)
             image_bytes = base_image["image"]
             image_ext = base_image["ext"]
+            if image_ext not in WEB_IMAGE_EXTENSIONS:
+                image_bytes = pixmap_to_png(pymupdf.Pixmap(doc, xref))
+                image_ext = "png"
             analysis = analyze_image_bytes(image_bytes)
             try:
                 rects = page.get_image_rects(xref, transform=False)

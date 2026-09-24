@@ -23,6 +23,7 @@ Optimize for reader navigation, not raw TOC fidelity alone.
 
 - Build a plan compatible with `scripts/split_chapters.py` and `scripts/generate_nav.py`.
 - Use lowercase kebab-case ASCII for section/file slugs.
+- Top-level section slugs `index`, `404`, `_astro`, and `pagefind` are reserved: they collide with the site home page, the not-found page, or build output. Name a back-of-book index `book-index`.
 - Consider all target source files together when 2 or more files are being added or re-split.
 - Reuse stable existing routes when they are already good enough.
 - Do not force a section landing page or `index` file just to preserve a menu group.

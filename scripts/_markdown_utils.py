@@ -14,7 +14,7 @@ from urllib.parse import unquote
 LINKED_MARKDOWN_IMAGE_RE = re.compile(r"\[!\[[^\]]*]\([^)]+\)]\([^)]+\)")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*]\([^)]+\)")
 MARKDOWN_HEADING_RE = re.compile(r"^#{1,3}\s+\S")
-ARTIFACT_HEADING_RE = re.compile(r"^#{1,6}[ \t]*(?:\d*|[A-Za-z])[ \t]*$", re.MULTILINE)
+ARTIFACT_HEADING_RE = re.compile(r"^#{1,6}[ \t]*(?:\d*|[A-Za-z]|[a-z]{2})[ \t]*$", re.MULTILINE)
 LIST_ITEM_MARKER_RE = re.compile(r"^[ \t]*(?:[-+*]|\d+[.)])[ \t]+")
 BLOCK_HEADING_RE = re.compile(r"^#{1,6}(?:[ \t]|$)")
 _TERMINAL_PUNCTUATION = ".!?"
@@ -51,12 +51,14 @@ def extract_markdown_image_targets(text: str) -> list[str]:
 
 
 def strip_artifact_headings(text: str) -> str:
-    """移除純數字、空白，或單一字母的 Markdown 標題（頁碼裝飾產物，與語言無關）。
+    """移除純數字、空白、單一字母，或兩個小寫字母的 Markdown 標題（版面裝飾產物，與語言無關）。
 
     OpenDataLoader 等來源可能把頁面折角頁碼、裝飾線，或版面雜訊（如單一字母的
-    首字放大裝飾）渲染成獨立標題（如 ``# 33``、``##``、``###### a``），這類標題
-    不含實質內容，可安全移除；兩個以上字母的標題一律視為真實標題保留。
-    此規則不涉及語言，翻譯後的 Markdown 也適用。
+    首字放大裝飾、封底裝飾字型的兩字母殘片）渲染成獨立標題（如 ``# 33``、``##``、
+    ``###### a``、``###### iz``），這類標題不含實質內容，可安全移除。
+    兩字母標題只在全為小寫時移除：``HP``、``GM`` 這類大寫縮寫是真實標題。三個以上
+    字母的標題一律保留，即使全小寫——同一裝飾字型的真實卡片標題會被抽成 ``soar``、
+    ``hoWl``、``GulP``。此規則不涉及語言，翻譯後的 Markdown 也適用。
     """
     cleaned = ARTIFACT_HEADING_RE.sub("", text)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)

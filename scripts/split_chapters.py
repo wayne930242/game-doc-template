@@ -55,6 +55,27 @@ from _image_analysis import (
 from _markdown_utils import clean_content, count_page_text_tokens, yaml_safe
 
 
+# Top-level section slugs that collide with the built site: `index/index.md` resolves to the
+# same route as the home page `index.mdx`, `404` replaces Starlight's not-found page, and
+# `_astro`/`pagefind` are directories the build and the search index write into.
+RESERVED_SECTION_SLUGS = frozenset({"index", "404", "_astro", "pagefind"})
+
+
+def validate_section_slugs(chapters: dict) -> None:
+    """Reject top-level section slugs that collide with site routes or build output.
+
+    Raises:
+        ValueError: a section key is reserved.
+    """
+    reserved = sorted(RESERVED_SECTION_SLUGS.intersection(chapters))
+    if reserved:
+        raise ValueError(
+            f"章節 slug {', '.join(reserved)} 為保留字，會與網站首頁或建置輸出衝突；"
+            "請改用其他 slug（例如書末索引用 book-index）。既有專案可用 "
+            "scripts/rename_chapter.py --from <slug> --to <new-slug> 修復"
+        )
+
+
 def load_config(config_path: Path) -> dict:
     """載入設定檔"""
     return json.loads(config_path.read_text(encoding="utf-8"))
@@ -125,7 +146,9 @@ def create_example_config(config_path: Path):
 def extract_pages(content: str) -> dict[int, str]:
     """從含頁碼標記的內容提取各頁"""
     pages = {}
-    pattern = r"<!-- PAGE (\d+) -->\n\n(.*?)(?=<!-- PAGE \d+ -->|$)"
+    # A text-empty last page (e.g. only an artifact heading was stripped) ends at its marker;
+    # it still owns the images the manifest places on it.
+    pattern = r"<!-- PAGE (\d+) -->(?:\n\n|\s*$)(.*?)(?=<!-- PAGE \d+ -->|$)"
 
     for match in re.finditer(pattern, content, re.DOTALL):
         page_num = int(match.group(1))
@@ -547,6 +570,8 @@ def split_chapters(config: dict, project_root: Path):
     _page_cache.clear()
     _manifest_cache.clear()
 
+    validate_section_slugs(config["chapters"])
+
     total_files = 0
     total_images = 0
 
@@ -625,7 +650,11 @@ def main():
         sys.exit(1)
 
     config = load_config(config_path)
-    split_chapters(config, project_root)
+    try:
+        split_chapters(config, project_root)
+    except ValueError as exc:
+        print(f"❌ {exc}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -219,6 +219,26 @@ class TestStripArtifactHeadings:
         text = "## AI\ncontent"
         assert strip_artifact_headings(text) == text
 
+    def test_removes_two_lowercase_letter_heading(self):
+        # Kedamono Opera page 262: back-cover lettering in the display font,
+        # extracted as a lone heading on an otherwise empty page.
+        text = "<!-- PAGE 261 -->\n\n<!-- PAGE 262 -->\n\n###### iz\n"
+        assert "iz" not in strip_artifact_headings(text)
+
+    @pytest.mark.parametrize("heading", ["## HP", "### GM", "## Go"])
+    def test_keeps_two_letter_heading_with_capital(self, heading):
+        assert strip_artifact_headings(f"{heading}\ncontent") == f"{heading}\ncontent"
+
+    @pytest.mark.parametrize(
+        "heading",
+        # Real card titles from the same Kedamono Opera display font
+        # (pages 160, 144, 145, 237): lowercase or mixed-case, three letters or more.
+        ["###### soar", "###### hoWl", "###### GulP", "###### NPCs"],
+    )
+    def test_keeps_real_display_font_short_headings(self, heading):
+        text = f"{heading}\n\nYou can fly freely."
+        assert strip_artifact_headings(text) == text
+
     def test_collapses_blank_lines_left_behind(self):
         text = "line1\n\n# 5\n\nline2"
         result = strip_artifact_headings(text)

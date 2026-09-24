@@ -60,6 +60,7 @@ Split policy for both planners:
 - Do not create a menu group that would contain only one Markdown page unless that section is intentionally a direct-link singleton after navigation generation.
 - If a section would only have one nearly empty landing page plus one real child page, collapse it before writing `chapters.json`.
 - Use current docs tree and existing `chapters.json` as topology evidence when they exist.
+- Never use a reserved top-level section slug (`index`, `404`, `_astro`, `pagefind`); `index/index.md` would replace the home page. `split_chapters.py` and `generate_nav.py` reject them. Name a back-of-book index `book-index`, and repair an existing project with `uv run python scripts/rename_chapter.py --from index --to book-index`, then rerun `generate_nav.py`.
 
 1. Create draft config path:
    - `.state/chapter-split/chapters.draft.json`
