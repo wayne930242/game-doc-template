@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
-import re
 from pathlib import Path
 
 import pytest
@@ -21,17 +19,6 @@ def test_target_base_requires_blog_slug():
     assert old_host_redirect.target_base("vaesen-rpg", "https://www.wayneh.tw/books/") == TARGET
     with pytest.raises(ValueError):
         old_host_redirect.target_base("Vaesen RPG", old_host_redirect.BLOG_BOOKS_URL)
-
-
-def test_vercel_deployment_redirects_every_path_permanently(tmp_path):
-    assert old_host_redirect.write_vercel(tmp_path, TARGET) == ["vercel.json"]
-    config = json.loads((tmp_path / "vercel.json").read_text(encoding="utf-8"))
-    assert config["buildCommand"] == "" and config["framework"] is None
-    [rule] = config["redirects"]
-    assert rule == {"source": "/(.*)", "destination": f"{TARGET}/$1", "statusCode": 301}
-    # Vercel applies the capture to the full path, so /rules/x/ keeps its trailing slash.
-    match = re.fullmatch(rule["source"], "/rules/x/")
-    assert rule["destination"].replace("$1", match.group(1)) == f"{TARGET}/rules/x/"
 
 
 def test_github_pages_site_preserves_each_old_path(tmp_path):

@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""Generate the permanent redirect that an old book host serves after blog migration.
+"""Generate the redirect an old GitHub Pages book site serves after blog migration.
 
-vercel        Writes a redirect-only Vercel deployment: every path answers 301 with the
-              same path under the blog URL. Deploy it to the old Vercel project.
-github-pages  Writes a static redirect site plus a Pages workflow into the book repo.
-              Pages cannot send a 301, so every old page gets a meta refresh, a
-              canonical link, and a script that keeps the query and fragment; 404.html
-              forwards any other path.
+Writes a static redirect site plus a Pages workflow into the book repo. Pages cannot
+send a 301, so every old page gets a meta refresh, a canonical link, and a script that
+keeps the query and fragment; 404.html forwards any other path.
 """
 
 from __future__ import annotations
@@ -64,24 +61,6 @@ def target_base(slug: str, blog_books_url: str) -> str:
     return f"{blog_books_url.rstrip('/')}/{slug}"
 
 
-def vercel_config(target: str) -> dict:
-    # Overrides the old project's build settings so the deployment carries no book build.
-    return {
-        "$schema": "https://openapi.vercel.sh/vercel.json",
-        "framework": None,
-        "buildCommand": "",
-        "installCommand": "",
-        "outputDirectory": ".",
-        "redirects": [{"source": "/(.*)", "destination": f"{target}/$1", "statusCode": 301}],
-    }
-
-
-def write_vercel(out: Path, target: str) -> list[str]:
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "vercel.json").write_text(json.dumps(vercel_config(target), indent=2) + "\n", encoding="utf-8")
-    return ["vercel.json"]
-
-
 def redirect_page(url: str, script: str) -> str:
     escaped = html.escape(url, quote=True)
     return (
@@ -127,9 +106,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--blog-books-url", default=BLOG_BOOKS_URL, help=f"Blog URL that holds the books (default {BLOG_BOOKS_URL})")
     hosts = parser.add_subparsers(dest="host", required=True)
-    vercel = hosts.add_parser("vercel", help="Redirect-only Vercel deployment directory")
-    vercel.add_argument("--slug", required=True, help="Blog slug of the book")
-    vercel.add_argument("--out", type=Path, required=True, help="Directory to deploy with the Vercel CLI")
     pages = hosts.add_parser("github-pages", help="Meta-refresh redirect site and workflow for a book repo")
     pages.add_argument("--slug", required=True, help="Blog slug of the book")
     pages.add_argument("--repo", type=Path, required=True, help="Book checkout that publishes GitHub Pages")
@@ -138,12 +114,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         target = target_base(args.slug, args.blog_books_url)
-        if args.host == "vercel":
-            written = write_vercel(args.out, target)
-            root = args.out
-        else:
-            written = write_github_pages(args.repo, target, args.pages_from, args.old_base)
-            root = args.repo
+        written = write_github_pages(args.repo, target, args.pages_from, args.old_base)
+        root = args.repo
     except (ValueError, OSError) as exc:
         print(f"Redirect error: {exc}", file=sys.stderr)
         return 1

@@ -1,8 +1,8 @@
 name: Book Export
 
 # Builds the blog export on every push to main and publishes it as the asset
-# book-export.tar.gz of one rolling release. The blog's sync-books.mjs downloads
-# it with `"ref": "book-export"` in books.config.json.
+# book-export.tar.gz of one rolling release, then asks the blog to redeploy. The
+# blog's sync-books.mjs downloads it with `ref: "book-export"` in books.config.js.
 
 on:
   push:
@@ -18,6 +18,7 @@ concurrency:
 
 env:
   RELEASE_TAG: book-export
+  BLOG_REPO: wayne930242/knowledge-base
   SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
 
 jobs:
@@ -69,3 +70,14 @@ jobs:
             gh release create "$RELEASE_TAG" "$RUNNER_TEMP/book-export.tar.gz" \
               --target "$GITHUB_SHA" --title "Book export" --notes "$notes"
           fi
+
+      # BLOG_DISPATCH_TOKEN: fine-grained token with Contents read/write on BLOG_REPO.
+      - name: Ask the blog to redeploy
+        env:
+          GH_TOKEN: ${{ secrets.BLOG_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error title=Blog not notified::Set the BLOG_DISPATCH_TOKEN secret so the blog picks up this export."
+            exit 1
+          fi
+          gh api "repos/$BLOG_REPO/dispatches" -f event_type=book-export -f "client_payload[repo]=$GITHUB_REPOSITORY"
