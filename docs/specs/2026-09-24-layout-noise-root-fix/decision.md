@@ -8,5 +8,7 @@ The published Kedamono Opera rules expose PDF furniture, duplicated image placem
 | How are printed references mapped? | Resolve printed page numbers through chapter page ranges and the source PDF page offset, then emit base-aware site routes. | Dispatch contract and fix-ref skill | grounded |
 | How are translated pages repaired? | Rewrite Markdown structure and generated navigation in place on a scratch copy; preserve translated prose. | Dispatch contract | grounded |
 | What blocks publication? | A checker reports unresolved layout noise and invalid navigation before export. | Dispatch contract | grounded |
+| Where does book-specific layout judgment live? | A generic derivation command writes evidence and overrides into the selected book project. Shared scripts contain no book-specific labels or paths. | Main-agent redirect on 2026-09-24 | grounded |
+| How do bilingual headings align? | Use source PDF text and typography, then a monotonic alignment of existing Markdown structure and approved glossary terms. Surface ambiguous pairings for project-level review. | Main-agent redirect and PDF inspection | grounded |
 
 No open user-owned decision blocks implementation.
