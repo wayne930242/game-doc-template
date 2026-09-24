@@ -321,8 +321,8 @@ def clean_watermarks(output_files: list[Path], watermarks: list[str]) -> None:
 
 
 def clean_opendataloader_temp_image_links(output_files: list[Path]) -> None:
-    """移除 opendataloader 逐頁暫存圖片連結；圖片由 manifest 重新插入。"""
-    pattern = re.compile(r"!\[[^\]]*\]\(page_\d+_images/[^)\s]+\)")
+    """移除 opendataloader 暫存圖片連結；圖片由 manifest 重新插入。"""
+    pattern = re.compile(r"!\[[^\]]*\]\([^)\s]*_images/[^)\s]+\)")
     for output_file in output_files:
         if not output_file.exists():
             continue

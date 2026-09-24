@@ -467,6 +467,20 @@ class TestCleanOpendataloaderTempImageLinks:
         assert "before" in content
         assert "after" in content
 
+    def test_removes_book_level_temporary_image_folder(self, tmp_path):
+        target = tmp_path / "book.md"
+        target.write_text(
+            "before ![img](Sample_Book_images/imageFile1.png) after",
+            encoding="utf-8",
+        )
+
+        clean_opendataloader_temp_image_links([target])
+
+        content = target.read_text(encoding="utf-8")
+        assert "Sample_Book_images" not in content
+        assert "before" in content
+        assert "after" in content
+
     def test_keeps_non_temp_image_links(self, tmp_path):
         target = tmp_path / "book.md"
         target.write_text("![alt](images/book/pic.png)", encoding="utf-8")

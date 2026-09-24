@@ -1,11 +1,28 @@
 from __future__ import annotations
 
+import pytest
+
 import _term_lib as tl
 
 
 def test_canonical_term_key_collapses_whitespace_and_singularizes_last_token(monkeypatch):
     monkeypatch.setattr(tl, "_singularize_token", lambda _token: "Move")
     assert tl.canonical_term_key("  Basic   Moves  ") == "Basic Move"
+
+
+@pytest.mark.skipif(not tl.SPACY_AVAILABLE, reason="spaCy is not installed")
+@pytest.mark.parametrize(
+    ("term", "expected"),
+    [
+        ("Shade-wolf", "Shade-wolf"),
+        ("Shade-wolves", "Shade-wolf"),
+        ("Mimir-strix", "Mimir-strix"),
+        ("Dread-hare", "Dread-hare"),
+        ("Goliath's Mimic", "Goliath's Mimic"),
+    ],
+)
+def test_canonical_term_key_keeps_every_part_of_hyphenated_words(term, expected):
+    assert tl.canonical_term_key(term) == expected
 
 
 def test_canonical_term_key_returns_empty_for_blank():

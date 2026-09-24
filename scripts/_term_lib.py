@@ -173,12 +173,15 @@ def _singularize_token(token: str) -> str:
     if SPACY_AVAILABLE:
         try:
             doc = parse_doc(token)
-            for tok in doc:
-                if tok.is_space or tok.is_punct:
-                    continue
-                lemma = (tok.lemma_ or tok.text).strip()
+            # Hyphenated or apostrophized words split into several tokens
+            # (e.g. Shade-wolf); only the last word takes the plural.
+            words = [tok for tok in doc if not (tok.is_space or tok.is_punct)]
+            if words:
+                last = words[-1]
+                lemma = (last.lemma_ or last.text).strip()
                 if lemma:
-                    return _match_case(tok.text, lemma)
+                    end = last.idx + len(last.text)
+                    return token[: last.idx] + _match_case(last.text, lemma) + token[end:]
         except Exception:
             pass
 
