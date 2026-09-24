@@ -269,7 +269,13 @@ python3 scripts/export_site.py --out /tmp/vaesen-book --archive /tmp/vaesen-book
 
 遷移工具更新建置、搜尋、匯出與 GitHub release 工作流程，保留書站的 Markdown／MDX、首頁、側邊欄、圖片、元件、樣式及額外套件。重跑同一指令會維持相同設定。工具會提示書站記錄的其他譯者或來源譯本，供製作名單核對；確認後將 `docs/bun.lock` 與遷移檔案一起提交。
 
-推送後 `Book Export` 工作流程會更新 `book-export` release，並通知 blog 重新部署。書站 repo 需要 `BLOG_DISPATCH_TOKEN` secret：一個只授權 `wayne930242/knowledge-base`、Contents 可讀寫的 fine-grained token（未設定時該步驟會失敗）。再把書加入 blog 的 `books.config.js`。
+推送後 `Book Export` 工作流程會更新 `book-export` release，並通知 blog 重新部署。書站 repo 需要 `BLOG_DISPATCH_TOKEN` secret：一個只授權 `wayne930242/knowledge-base`、Contents 可讀寫的 fine-grained token（GitHub 上名為 `blog-dispatch`，未設定時該步驟會失敗）。Token 存在 macOS Keychain 的 `blog-dispatch-token`，直接導入 GitHub、不顯示內容：
+
+```bash
+security find-generic-password -s blog-dispatch-token -w | gh secret set BLOG_DISPATCH_TOKEN --repo wayne930242/<repo>
+```
+
+Keychain 沒有這筆時，到 GitHub 重新產生 `blog-dispatch` token，複製後以 `security add-generic-password -U -a wayne930242 -s blog-dispatch-token -w "$(pbpaste)"` 存入。再把書加入 blog 的 `books.config.js`。
 
 #### 比對遷移前後的內容
 
