@@ -53,6 +53,17 @@ from _image_analysis import (
     is_background_candidate,
 )
 from _markdown_utils import clean_content, count_page_text_tokens, yaml_safe
+from _layout_cleanup import (
+    annotate_d66_pair_headings,
+    d66_pair_pages,
+    d66_pages,
+    is_d66_icon,
+    is_page_ornament,
+    repair_d66_tables,
+    strip_duplicate_title,
+    strip_page_furniture,
+    unique_placements,
+)
 
 
 # Top-level section slugs that collide with the built site: `index/index.md` resolves to the
@@ -165,28 +176,6 @@ def get_page_range(pages: dict[int, str], start: int, end: int) -> str:
         if page_num in pages:
             parts.append(pages[page_num])
     return "\n\n".join(parts)
-
-
-
-
-def _strip_duplicate_heading(content: str, title: str) -> str:
-    """移除內文開頭與 frontmatter title 重複的 H1/H2 標題。"""
-    lines = content.split("\n")
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        m = re.match(r'^#{1,2}\s+(.+)', stripped)
-        if m:
-            heading_text = m.group(1).strip()
-            if heading_text == title:
-                lines[i] = ""
-                while i + 1 < len(lines) and not lines[i + 1].strip():
-                    lines.pop(i + 1)
-                return "\n".join(lines)
-        break
-    return content
-
 
 def generate_frontmatter(title: str, description: str = "", order: int | None = None) -> str:
     """生成 Starlight frontmatter"""
@@ -353,6 +342,13 @@ def group_images_by_page(
         policy.get("background_dominant_color_ratio_threshold", 0.85)
     )
 
+    images = unique_placements(images)
+    dice_pages = d66_pages(images)
+    pair_pages = d66_pair_pages(images)
+    ornament_counts = Counter(
+        (image.get("visual_hash"), round(float(image.get("width") or 0)), round(float(image.get("height") or 0)))
+        for image in images if image.get("visual_hash")
+    )
     size_counts = Counter(
         size_key
         for image in images
@@ -367,6 +363,16 @@ def group_images_by_page(
     page_images: dict[int, list[dict]] = defaultdict(list)
     skipped = 0
     for image in images:
+        ornament_key = (image.get("visual_hash"), round(float(image.get("width") or 0)), round(float(image.get("height") or 0)))
+        if is_page_ornament(image, ornament_counts[ornament_key]) or (
+            int(image["page"]) in dice_pages and is_d66_icon(image)
+        ) or (
+            int(image["page"]) in pair_pages
+            and 13 <= float(image.get("width") or 0) <= 15
+            and 13 <= float(image.get("height") or 0) <= 15
+        ):
+            skipped += 1
+            continue
         size_key = image_file_size_key(image)
         visual_key = image_visual_key(image)
         dominant_color_ratio = image_dominant_color_ratio(image)
@@ -466,7 +472,7 @@ def build_section_content(
         if page_num not in pages:
             continue
 
-        page_content = clean_content(pages[page_num], clean_patterns)
+        page_content = strip_page_furniture(clean_content(pages[page_num], clean_patterns))
         images = page_images.get(page_num, [])
         image_lines = []
         for image in images:
@@ -533,7 +539,7 @@ def process_files(
                 page_images, output_path, project_root, assets_dir, source_slug,
             )
             frontmatter = generate_frontmatter(title, description, order)
-            section_content = _strip_duplicate_heading(section_content, title)
+            section_content = strip_duplicate_title(section_content, title)
             full_content = frontmatter + "\n" + section_content
             output_path.write_text(full_content, encoding="utf-8")
             char_count = len(section_content)
@@ -594,6 +600,12 @@ def split_chapters(config: dict, project_root: Path):
         manifest_images, manifest_path, image_policy = _load_manifest_cached(
             ch_config["source"], images_config, project_root
         )
+        for page_num in d66_pages(manifest_images):
+            if page_num in pages:
+                pages[page_num], _ = repair_d66_tables(pages[page_num])
+        for page_num, first_die in d66_pair_pages(manifest_images).items():
+            if page_num in pages:
+                pages[page_num], _ = annotate_d66_pair_headings(pages[page_num], first_die)
         page_images, skipped = group_images_by_page(
             manifest_images, page_text_stats, image_policy
         )

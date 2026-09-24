@@ -20,6 +20,7 @@ from typing import Any
 
 from _style_decisions_lib import load_and_validate_style_decisions
 from generate_nav import deployment_base_path, update_astro_site_base, update_astro_site_title
+from repair_layout import layout_issues
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STYLE_FILE = PROJECT_ROOT / "style-decisions.json"
@@ -203,6 +204,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def run(args: argparse.Namespace) -> None:
+    issues = layout_issues(PROJECT_ROOT)
+    if issues:
+        preview = "\n".join(f"  {issue}" for issue in issues[:20])
+        raise ExportError(f"網站仍有 {len(issues)} 個 PDF 版面殘留；先執行 scripts/repair_layout.py：\n{preview}")
     style = load_and_validate_style_decisions(STYLE_FILE)
     base_path = blog_base_path(style)
     assert_config_synced(ASTRO_CONFIG.read_text(encoding="utf-8"), style)

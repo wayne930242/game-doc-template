@@ -752,8 +752,15 @@ def extract_images(pdf_path: Path, output_dir: Path) -> list[dict]:
         except TypeError:
             page_images = page.get_images()
 
+        # get_images() may list one XObject once for every use. get_image_rects()
+        # already returns every placement, so visiting the XObject again multiplies
+        # the output (a 36-die table became 216 files in Kedamono Opera).
+        seen_xrefs: set[int] = set()
         for img_index, img in enumerate(page_images):
             xref = img[0]
+            if xref in seen_xrefs:
+                continue
+            seen_xrefs.add(xref)
             base_image = doc.extract_image(xref)
             image_bytes = base_image["image"]
             image_ext = base_image["ext"]

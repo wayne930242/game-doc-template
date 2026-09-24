@@ -125,7 +125,7 @@ def first_file_description(section: dict) -> str:
 
 # --- Index page generation ---
 
-def generate_index(chapters: dict, style: dict, mode: str = "zh_only") -> str:
+def generate_index(chapters: dict, style: dict, mode: str = "zh_only", hero_image: Path | None = None) -> str:
     base_path = deployment_base_path(style)
     sections = sorted_sections(chapters)
     first_slug = sections[0][0] if sections else "reference"
@@ -155,7 +155,7 @@ def generate_index(chapters: dict, style: dict, mode: str = "zh_only") -> str:
         "hero:",
         f"  tagline: {yaml_safe(tagline)}",
     ]
-    if HERO_IMAGE.exists():
+    if (hero_image or HERO_IMAGE).exists():
         lines += [
             "  image:",
             f"    file: {HERO_IMAGE_REF}",
@@ -357,12 +357,17 @@ def update_astro_site_title(config_text: str, style: dict) -> str:
     return SITE_TITLE_PATTERN.sub(lambda match: f"{match['lead']}'{literal}',", config_text, count=1)
 
 
-def main() -> None:
-    if not CHAPTERS_FILE.exists():
-        print(f"❌ 找不到 {CHAPTERS_FILE}", file=sys.stderr)
+def regenerate(project_root: Path) -> None:
+    """Regenerate navigation for a selected book checkout."""
+    chapters_file = project_root / "chapters.json"
+    style_file = project_root / "style-decisions.json"
+    index_file = project_root / "docs/src/content/docs/index.mdx"
+    astro_config = project_root / "docs/astro.config.mjs"
+    if not chapters_file.exists():
+        print(f"❌ 找不到 {chapters_file}", file=sys.stderr)
         raise SystemExit(1)
 
-    chapters_data = load_json(CHAPTERS_FILE)
+    chapters_data = load_json(chapters_file)
     if "chapters" in chapters_data:
         chapters = chapters_data["chapters"]
         mode = chapters_data.get("mode", "zh_only")
@@ -385,37 +390,40 @@ def main() -> None:
     for section in chapters.values():
         section["files"] = normalize_files(section.get("files", {}))
 
-    style = load_json(STYLE_FILE) if STYLE_FILE.exists() else {}
+    style = load_json(style_file) if style_file.exists() else {}
 
     # Generate index.mdx
-    index_content = generate_index(chapters, style, mode=mode)
-    INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
-    INDEX_FILE.write_text(index_content, encoding="utf-8")
-    print(f"✓ 已產生首頁: {INDEX_FILE}")
+    index_content = generate_index(chapters, style, mode=mode, hero_image=project_root / "docs/src/assets/hero.jpg")
+    index_file.parent.mkdir(parents=True, exist_ok=True)
+    index_file.write_text(index_content, encoding="utf-8")
+    print(f"✓ 已產生首頁: {index_file}")
 
     # Update astro.config.mjs sidebar + site/base
-    if ASTRO_CONFIG.exists():
-        original = ASTRO_CONFIG.read_text(encoding="utf-8")
+    if astro_config.exists():
+        original = astro_config.read_text(encoding="utf-8")
         try:
             updated = update_astro_sidebar(original, chapters, mode=mode)
         except SidebarPatchError as exc:
-            print(f"❌ {exc}：{ASTRO_CONFIG}", file=sys.stderr)
+            print(f"❌ {exc}：{astro_config}", file=sys.stderr)
             raise SystemExit(1) from exc
         updated = update_astro_site_base(updated, style)
         updated = update_astro_site_title(updated, style)
         if updated != original:
-            ASTRO_CONFIG.write_text(updated, encoding="utf-8")
-            print(f"✓ 已更新側邊欄、site/base 與網站標題設定: {ASTRO_CONFIG}")
+            astro_config.write_text(updated, encoding="utf-8")
+            print(f"✓ 已更新側邊欄、site/base 與網站標題設定: {astro_config}")
         else:
             print("ℹ 側邊欄、site/base 與網站標題設定未變更")
     else:
-        print(f"⚠ 找不到 {ASTRO_CONFIG}", file=sys.stderr)
+        print(f"⚠ 找不到 {astro_config}", file=sys.stderr)
 
-    # Summary
     sections = sorted_sections(chapters)
     print(f"\n章節清單 ({len(sections)} 個):")
     for slug, section in sections:
         print(f"  /{slug}/ → {section['title']}")
+
+
+def main() -> None:
+    regenerate(PROJECT_ROOT)
 
 
 if __name__ == "__main__":
