@@ -15,7 +15,7 @@ from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 
-from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, is_edge_sliver, repair_d66_tables, strip_duplicate_title, strip_page_furniture
+from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, is_edge_furniture, repair_d66_tables, strip_duplicate_title, strip_page_furniture
 from _markdown_utils import find_empty_tables
 from _paired_layout import _format_translated_spread, _pdf_roles, _tree_digest, add_reviewed_decisions, derive_layout_plan, match_chapter_paths, recorded_repair, repair_paired_layout
 from generate_nav import deployment_base_path, regenerate
@@ -354,8 +354,8 @@ def _update_group_titles(project_root: Path, chapters: dict, leaves: list[tuple[
 
 
 def remove_edge_slivers(docs: Path, manifest: list[dict]) -> list[str]:
-    """Drop page-edge sliver image references; return `path: filename` per removal."""
-    slivers = {image["filename"] for image in manifest if is_edge_sliver(image)}
+    """Drop page-edge sliver and tab image references; return `path: filename` per removal."""
+    slivers = {image["filename"] for image in manifest if is_edge_furniture(image)}
     removed: list[str] = []
     for path in sorted(docs.rglob("*.md")):
         original = path.read_text(encoding="utf-8")
@@ -589,6 +589,20 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
         keep = {image["filename"] for group in allowed.values() for image in group}
     else:
         keep = set()
+
+    def part_labels(path: Path) -> set[str]:
+        """Sidebar group labels and chapters.json group titles above one page."""
+        labels: set[str] = set()
+        rel = path.relative_to(docs)
+        if len(rel.parts) < 2:
+            return labels
+        section = config.get("chapters", {}).get(rel.parts[0], {})
+        labels.update(section.get(key, "") for key in ("title", "translated_title"))
+        meta = path.parent / "_meta.yml"
+        if meta.is_file() and (match := re.search(r"(?m)^label:\s*(.+)$", meta.read_text(encoding="utf-8"))):
+            labels.add(match.group(1).strip().strip("'\""))
+        return {re.sub(r"\s+", "", label).casefold() for label in labels if label}
+
     for path in sorted(docs.rglob("*.md")):
         text = path.read_text(encoding="utf-8")
         title = front_title(text)
@@ -617,6 +631,9 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
                 issues.append(f"{name}: body H1/H2 duplicates frontmatter title")
             if sum(label == normalized for _, label in headings) >= 2:
                 issues.append(f"{name}: repeated body title headings")
+        first_heading = re.search(r"(?m)^#{2,6}\s+(.+?)\s*$", body)
+        if first_heading and re.sub(r"\s+", "", first_heading.group(1)).casefold() in part_labels(path):
+            issues.append(f"{name}: first heading repeats chapter part label: {first_heading.group(1)}")
         for paragraph in re.split(r"\n\s*\n", body):
             p = paragraph.strip()
             if (re.fullmatch(r"\d{1,3}|[A-Za-z]|第\s*\d+\s*章|(?:第\s*\d+\s*頁[\s　]*)+|章節封面|CHAPTER COVER", p)

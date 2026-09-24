@@ -76,9 +76,10 @@ def annotate_d66_pair_headings(text: str, first_die: int) -> tuple[str, int]:
 def is_edge_sliver(image: dict) -> bool:
     """Detect bleed and frame strips cut off at a page edge.
 
-    A sliver touches a page edge along its thin side, spans at most 6% of the
+    A sliver touches a page edge along its thin side, spans at most 7% of the
     page across, and is at least ten times longer than it is thin. Symbols and
-    rules inside the page, and small edge tabs, fail one of these tests.
+    rules inside the page fail one of these tests. The 7% bound admits a 6.7%
+    crop of spread art and rejects 10% column art standing on the edge.
     """
     width, height = image.get("width"), image.get("height")
     pw, ph = image.get("page_width"), image.get("page_height")
@@ -86,9 +87,29 @@ def is_edge_sliver(image: dict) -> bool:
     if not all(value is not None for value in (width, height, pw, ph, x, y)):
         return False
     width, height, pw, ph, x, y = map(float, (width, height, pw, ph, x, y))
-    vertical = (x <= 1 or x + width >= pw - 1) and width <= pw * 0.06 and height >= width * 10
-    horizontal = (y <= 1 or y + height >= ph - 1) and height <= ph * 0.06 and width >= height * 10
+    vertical = (x <= 1 or x + width >= pw - 1) and width <= pw * 0.07 and height >= width * 10
+    horizontal = (y <= 1 or y + height >= ph - 1) and height <= ph * 0.07 and width >= height * 10
     return vertical or horizontal
+
+
+def is_edge_tab(image: dict) -> bool:
+    """Detect printed thumb-index tabs and banner flags standing on a side edge.
+
+    A tab touches the left or right page edge and stays within 10% of the page
+    width and 7% of its height; printed tabs measure about 6-9% by 6%. Inline
+    symbols and rules sit inside the page, and edge art is larger.
+    """
+    width, height = image.get("width"), image.get("height")
+    pw, ph = image.get("page_width"), image.get("page_height")
+    x = image.get("x")
+    if not all(value is not None for value in (width, height, pw, ph, x)):
+        return False
+    width, height, pw, ph, x = map(float, (width, height, pw, ph, x))
+    return (x <= 1 or x + width >= pw - 1) and width <= pw * 0.1 and height <= ph * 0.07
+
+
+def is_edge_furniture(image: dict) -> bool:
+    return is_edge_sliver(image) or is_edge_tab(image)
 
 
 def is_page_ornament(image: dict, repeat_count: int) -> bool:
@@ -116,6 +137,37 @@ def is_page_ornament(image: dict, repeat_count: int) -> bool:
 _FURNITURE = re.compile(
     r"(?m)(?<=\n\n)(?:\d{1,3}|[A-Za-z]|第\s*\d+\s*章|(?:第\s*\d+\s*頁[\s　]*)+|章節封面|CHAPTER COVER)(?=\n\n|\n?$)"
 )
+
+
+_COVER_MARKER = re.compile(r"(?im)^(?:chapter\s+cover|章節封面)$")
+_PAGE_MARKER = re.compile(r"(<!-- PAGE \d+ -->)")
+
+
+def strip_chapter_cover(page: str) -> str:
+    """Empty one page's text when it is a chapter cover.
+
+    A cover page carries the printed `CHAPTER COVER` label (on one line or two)
+    beside at most four short lines such as the chapter number and part name.
+    Its text is page furniture; the cover art comes from the image manifest.
+    """
+    lines = "\n".join(line.strip().lstrip("#").strip() for line in page.splitlines() if line.strip())
+    if not _COVER_MARKER.search(lines):
+        return page
+    rest = [line for line in _COVER_MARKER.sub("", lines).splitlines() if line.strip()]
+    if len(rest) > 4 or any(len(line) > 60 for line in rest):
+        return page
+    return ""
+
+
+def strip_chapter_covers(text: str) -> tuple[str, list[str]]:
+    """Empty every cover page in `<!-- PAGE N -->` text; return removed page texts."""
+    parts = _PAGE_MARKER.split(text)
+    removed: list[str] = []
+    for index in range(2, len(parts), 2):
+        if parts[index].strip() and not strip_chapter_cover(parts[index]):
+            removed.append(parts[index].strip())
+            parts[index] = "\n\n" if index + 1 < len(parts) else "\n"
+    return "".join(parts), removed
 
 
 def strip_page_furniture(text: str) -> str:

@@ -58,9 +58,10 @@ from _layout_cleanup import (
     d66_pair_pages,
     d66_pages,
     is_d66_icon,
-    is_edge_sliver,
+    is_edge_furniture,
     is_page_ornament,
     repair_d66_tables,
+    strip_chapter_cover,
     strip_duplicate_title,
     strip_page_furniture,
     unique_placements,
@@ -365,7 +366,7 @@ def group_images_by_page(
     skipped = 0
     for image in images:
         ornament_key = (image.get("visual_hash"), round(float(image.get("width") or 0)), round(float(image.get("height") or 0)))
-        if is_page_ornament(image, ornament_counts[ornament_key]) or is_edge_sliver(image) or (
+        if is_page_ornament(image, ornament_counts[ornament_key]) or is_edge_furniture(image) or (
             int(image["page"]) in dice_pages and is_d66_icon(image)
         ) or (
             int(image["page"]) in pair_pages
@@ -473,7 +474,7 @@ def build_section_content(
         if page_num not in pages:
             continue
 
-        page_content = strip_page_furniture(clean_content(pages[page_num], clean_patterns))
+        page_content = strip_page_furniture(strip_chapter_cover(clean_content(pages[page_num], clean_patterns)))
         images = page_images.get(page_num, [])
         image_lines = []
         for image in images:

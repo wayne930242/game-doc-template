@@ -618,3 +618,41 @@ class TestCleanParagraphContinuations:
     def test_missing_file_is_skipped(self, tmp_path):
         missing = tmp_path / "missing.md"
         clean_paragraph_continuations([missing])  # should not raise
+
+
+def test_fresh_extraction_and_split_drop_the_chapter_cover_block(tmp_path):
+    """A printed cover page (label, chapter number, part name) yields no page text or heading."""
+    import shutil
+    import subprocess
+    import sys
+
+    import fitz
+
+    scripts = Path(__file__).resolve().parents[1]
+    shutil.copytree(scripts, tmp_path / "scripts", ignore=shutil.ignore_patterns("tests", "__pycache__"))
+    pdf = tmp_path / "data/pdfs/Book.pdf"
+    pdf.parent.mkdir(parents=True)
+    document = fitz.open()
+    for lines in (["CHAPTER\nCOVER", "Chapter 2", "On the World"], ["A kedamono is a beast of the forest."]):
+        page = document.new_page(width=432, height=648)
+        for index, line in enumerate(lines):
+            page.insert_text((60, 100 + 40 * index), line, fontsize=14)
+    document.save(pdf)
+
+    def run(*args: str) -> None:
+        subprocess.run([sys.executable, *args], cwd=tmp_path, check=True, capture_output=True, text=True)
+
+    run("scripts/extract_pdf.py", str(pdf), "--page-text-engine", "pymupdf",
+        "--skip-full-markitdown", "--no-include-images")
+    pages = (tmp_path / "data/markdown/Book_pages.md").read_text(encoding="utf-8")
+    assert "On the World" not in pages and "COVER" not in pages and "<!-- PAGE 1 -->" in pages
+    (tmp_path / "chapters.json").write_text(json.dumps({
+        "source": "data/markdown/Book_pages.md", "output_dir": "docs/src/content/docs",
+        "chapters": {"on-the-world": {"title": "On the World", "order": 1,
+                                      "files": {"index": {"title": "On the World", "pages": [1, 2]}}}}}),
+        encoding="utf-8")
+    run("scripts/split_chapters.py")
+    page = (tmp_path / "docs/src/content/docs/on-the-world/index.md").read_text(encoding="utf-8")
+    body = page.split("---", 2)[2]
+    assert "#" not in body and "On the World" not in body and "Chapter 2" not in body
+    assert "A kedamono is a beast of the forest." in body

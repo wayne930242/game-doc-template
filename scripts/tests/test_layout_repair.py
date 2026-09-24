@@ -9,9 +9,13 @@ from _layout_cleanup import (
     annotate_d66_pair_headings,
     d66_pair_pages,
     d66_pages,
+    is_edge_furniture,
     is_edge_sliver,
+    is_edge_tab,
     is_page_ornament,
     repair_d66_tables,
+    strip_chapter_cover,
+    strip_chapter_covers,
     strip_duplicate_title,
     strip_page_furniture,
     unique_placements,
@@ -265,12 +269,23 @@ EDGE_SLIVERS = [
     (-1.3, -1.1, 4.4, 398.6), (-1.4, -1.6, 4.4, 373.6), (-1.4, -1.3, 4.4, 342.5),
     # Borderline: a 21 pt crop of spread art bleeding past the gutter (4.9% wide, 13.7:1).
     (-1.1, -1.1, 20.7, 283.7),
+    # Widest published crop: 28 pt of spread art cut at the edge (6.7% wide, 10.8:1).
+    (-1.0, 287.1, 28.0, 301.9),
 ]
-# Real small art: inline symbols, in-page rules, edge tabs, and ordinary illustrations.
+# Published thumb-index tabs and banner flags on the left edge (5.6-9.1% wide, 6.0% tall).
+EDGE_TABS = [
+    (0.4, 51.9, 27.2, 35.7), (-1.0, 50.6, 37.6, 35.7), (-0.0, 86.3, 29.4, 35.7),
+    (0.7, 227.7, 34.1, 35.7), (-0.3, 298.5, 27.3, 35.7), (-1.1, 45.0, 28.0, 35.7),
+    (-1.0, 201.8, 23.5, 35.7), (-1.1, 336.9, 28.0, 35.7), (-1.0, 179.5, 36.3, 35.7),
+    (-1.1, 416.3, 28.0, 35.7), (-1.0, 45.0, 38.0, 35.7), (-1.0, 62.9, 23.2, 35.7),
+    (0.7, 86.5, 23.5, 35.7),
+]
+# Real art: inline symbols, in-page rules, ordinary illustrations, column art
+# standing on the right edge (10.2% wide), and full-bleed chapter-cover art.
 KEPT_ART = [
     (194.2, 243.2, 8.8, 8.8), (170.0, 194.6, 13.2, 9.9), (93.3, 349.8, 213.8, 10.4),
-    (203.9, 517.3, 19.7, 19.2), (-1.0, 62.9, 23.2, 35.7), (0.7, 86.5, 23.5, 35.7),
-    (48.96, 56.44, 321.92, 143.3),
+    (203.9, 517.3, 19.7, 19.2), (48.96, 56.44, 321.92, 143.3), (378.0, 135.0, 43.0, 461.4),
+    (-10.0, -10.0, 430.0, 614.0),
 ]
 
 
@@ -286,6 +301,23 @@ def test_edge_slivers_are_thin_long_strips_touching_a_page_edge():
     assert is_edge_sliver(_placement(20, -1, 350, 4))
     assert is_edge_sliver(_placement(20, PAGE["page_height"] - 3, 350, 4))
     assert not is_edge_sliver(_placement(20, 300, 350, 4))
+
+
+def test_edge_tabs_are_small_marks_standing_on_a_side_edge():
+    assert all(is_edge_tab(_placement(*box)) for box in EDGE_TABS)
+    assert not any(is_edge_furniture(_placement(*box)) for box in KEPT_ART)
+    assert is_edge_tab(_placement(PAGE["page_width"] - 30, 200, 31, 35.7))
+    # The same mark inside the page is content, and a taller edge block is art.
+    assert not is_edge_tab(_placement(30, 200, 28, 35.7))
+    assert not is_edge_tab(_placement(-1, 200, 28, 60))
+
+
+def test_chapter_split_skips_edge_tabs():
+    tab = _placement(-1.0, 62.9, 23.2, 35.7, page=3, filename="tab.png")
+    cover = _placement(-10.0, -10.0, 430.0, 614.0, page=3, filename="cover.png")
+    allowed, skipped = group_images_by_page([tab, cover], {}, {})
+    assert [image["filename"] for image in allowed[3]] == ["cover.png"]
+    assert skipped == 1
 
 
 def test_chapter_split_skips_edge_slivers_but_keeps_symbols():
@@ -400,3 +432,77 @@ def test_reapply_reruns_the_full_repair_over_later_edits(tmp_path: Path):
     result = repair(project, reapply=True)
     assert "skipped" not in result and result["duplicate_titles_removed"]
     assert "# 規則" not in (project / "docs/src/content/docs/rules/index.md").read_text(encoding="utf-8")
+
+
+def test_repair_drops_edge_tabs_on_an_edited_project(tmp_path: Path):
+    project = _edited_after_repair(tmp_path)
+    docs = project / "docs/src/content/docs"
+    manifest = project / "data/markdown/images/Book/manifest.json"
+    images = json.loads(manifest.read_text(encoding="utf-8"))["images"]
+    images.append(_placement(-1.0, 62.9, 23.2, 35.7, page=1, filename="page001_tab.png"))
+    manifest.write_text(json.dumps({"images": images}), encoding="utf-8")
+    chapter = docs / "rules/index.md"
+    chapter.write_text(chapter.read_text(encoding="utf-8").replace(
+        "正文。", "![](../../../assets/page001_tab.png)\n\n正文。"), encoding="utf-8")
+    assert "docs/src/content/docs/rules/index.md: layout image page001_tab.png" in layout_issues(project)
+    result = repair(project)
+    assert result["edge_sliver_files"] == ["rules/index.md: page001_tab.png", "rules/index.md: page001_sliver.png"]
+    text = chapter.read_text(encoding="utf-8")
+    assert "# 規則\n\n正文。" in text and "page001_tab.png" not in text and "page001_symbol.png" in text
+    assert not any("page001_tab.png" in issue for issue in layout_issues(project))
+
+
+COVER_PAGE = "Chapter 2\n\n###### on The World\n\nCHAPTER COVER"
+
+
+def test_chapter_cover_page_text_is_dropped_whole():
+    assert strip_chapter_cover(COVER_PAGE) == ""
+    assert strip_chapter_cover("index\n\nCHAPTER COVER") == ""
+    # A body page that happens to hold the label keeps its prose.
+    body = "CHAPTER COVER\n\n" + "A long rules paragraph that explains how scenes open and close. " * 2
+    assert strip_chapter_cover(body) == body
+    assert strip_chapter_cover("###### on The World") == "###### on The World"
+
+
+def test_chapter_covers_are_emptied_across_marked_pages():
+    text = f"<!-- PAGE 28 -->\n\nEnd.\n\n<!-- PAGE 29 -->\n\n{COVER_PAGE}\n\n<!-- PAGE 30 -->\n\n###### Next\n"
+    cleaned, removed = strip_chapter_covers(text)
+    assert removed == [COVER_PAGE]
+    assert cleaned == "<!-- PAGE 28 -->\n\nEnd.\n\n<!-- PAGE 29 -->\n\n<!-- PAGE 30 -->\n\n###### Next\n"
+    assert strip_chapter_covers(cleaned) == (cleaned, [])
+
+
+def test_chapter_split_drops_cover_block_but_keeps_cover_art(tmp_path: Path):
+    from split_chapters import build_section_content, extract_pages
+
+    pages = extract_pages(f"<!-- PAGE 29 -->\n\n{COVER_PAGE}\n\n<!-- PAGE 30 -->\n\nA kedamono is a beast.\n")
+    art = tmp_path / "data/markdown/images/Book/page029_art.png"
+    art.parent.mkdir(parents=True)
+    art.write_bytes(b"png")
+    cover = _placement(-10.0, -10.0, 430.0, 614.0, page=29, filename="page029_art.png",
+                       path="images/Book/page029_art.png")
+    output = tmp_path / "docs/src/content/docs/on-the-world/definition.md"
+    content, copied = build_section_content(pages, 29, 30, [], {29: [cover]}, output, tmp_path,
+                                            tmp_path / "docs/src/assets/extracted", "Book")
+    assert copied == 1
+    assert content.startswith("![") and "page029_art.png" in content
+    assert "on The World" not in content and "Chapter 2" not in content and "COVER" not in content
+    assert content.endswith("A kedamono is a beast.")
+
+
+def test_layout_gate_flags_first_heading_repeating_the_part_label(tmp_path: Path):
+    docs = tmp_path / "docs/src/content/docs/on-the-world"
+    docs.mkdir(parents=True)
+    (tmp_path / "chapters.json").write_text(json.dumps({"chapters": {"on-the-world": {
+        "title": "On the World", "translated_title": "關於世界",
+        "files": {"definition": {"title": "定義", "pages": [29, 38]},
+                  "forest": {"title": "森林", "pages": [39, 50]}}}}}), encoding="utf-8")
+    (docs / "_meta.yml").write_text("label: 世界觀\norder: 2\n", encoding="utf-8")
+    (docs / "definition.md").write_text("---\ntitle: 定義\n---\n\n## 關於世界\n\n正文。\n\n## 分類\n", encoding="utf-8")
+    (docs / "forest.md").write_text("---\ntitle: 森林\n---\n\n## 世界觀\n\n正文。\n", encoding="utf-8")
+    (docs / "clean.md").write_text("---\ntitle: 乾淨\n---\n\n## 分類\n\n關於世界。\n\n## 關於世界\n", encoding="utf-8")
+    issues = [issue for issue in layout_issues(tmp_path) if "part label" in issue]
+    assert issues == [
+        "docs/src/content/docs/on-the-world/definition.md: first heading repeats chapter part label: 關於世界",
+        "docs/src/content/docs/on-the-world/forest.md: first heading repeats chapter part label: 世界觀",
+    ]

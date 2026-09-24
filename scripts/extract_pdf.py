@@ -36,6 +36,7 @@ from _layout_lib import (
     extract_page_text_pymupdf,
     probe_pymupdf_text_quality,
 )
+from _layout_cleanup import strip_chapter_covers
 from _markdown_utils import (
     clean_symbol_glyph_ornaments,
     merge_list_continuations,
@@ -355,6 +356,22 @@ def clean_empty_tables(output_files: list[Path]) -> None:
         if count:
             output_file.write_text(cleaned, encoding="utf-8")
             print(f"✓ 已移除空白表格（{count} 個）: {output_file}")
+
+
+def clean_chapter_covers(pages_file: Path, full_file: Path) -> None:
+    """移除章節封面頁的文字（章號、部名與 CHAPTER COVER 標籤）；封面插圖由 manifest 插入。"""
+    if not pages_file.exists():
+        return
+    cleaned, covers = strip_chapter_covers(pages_file.read_text(encoding="utf-8"))
+    if not covers:
+        return
+    pages_file.write_text(cleaned, encoding="utf-8")
+    if full_file.exists():
+        full = full_file.read_text(encoding="utf-8")
+        for cover in covers:
+            full = full.replace(cover, "", 1)
+        full_file.write_text(re.sub(r"\n{3,}", "\n\n", full), encoding="utf-8")
+    print(f"✓ 已移除章節封面文字（{len(covers)} 頁）: {pages_file}")
 
 
 def clean_list_continuations(output_files: list[Path]) -> None:
@@ -986,6 +1003,7 @@ def main():
     ]
     clean_watermarks(generated_markdown, strategy["watermarks"])
     clean_empty_tables(generated_markdown)
+    clean_chapter_covers(generated_markdown[1], generated_markdown[0])
     if strategy["page_text_engine"] == "opendataloader":
         clean_opendataloader_temp_image_links(generated_markdown)
         clean_artifact_headings(generated_markdown)
