@@ -190,6 +190,7 @@ uv run python scripts/style_decisions.py set-images --preserve-images <true_or_f
 8. Ask for copyright and credits in Traditional Chinese:
    - Copyright notice text（例：`© 2024 Author Name. All rights reserved.`）
    - Credits entries as role → name pairs（例：原作者、翻譯、美術設計等）
+   - Acknowledgements as name → note pairs for people whose existing work was consulted but who took no part in this one（例：參考的既有譯本作者）
    - Whether to show each section on the homepage
 9. Persist via:
 
@@ -200,6 +201,7 @@ uv run python scripts/style_decisions.py set-copyright \
 uv run python scripts/style_decisions.py set-credits \
   --entry "原作者:..." \
   --entry "翻譯:..." \
+  --acknowledgement "名稱:說明" \
   --show-on-homepage <true_or_false>
 ```
 
@@ -228,7 +230,7 @@ uv run python scripts/style_decisions.py add-translation-note \
 uv run python scripts/validate_style_decisions.py
 ```
 
-`generate_nav.py` will render these as **## 版權宣告** and **## 製作名單** sections on the homepage. If neither is provided, a generic fallback disclaimer is used.
+`generate_nav.py` will render these as **## 版權宣告** and **## 製作名單** sections on the homepage; acknowledgements appear as a **### 致謝** list after the credits table. If neither is provided, a generic fallback disclaimer is used.
 
 **Verification:** `validate_style_decisions.py` exits 0; `style-decisions.json` contains site meta (including `original_title`), copyright, credits, and image decisions.
 

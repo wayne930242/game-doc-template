@@ -156,6 +156,47 @@ def test_cmd_set_deployment_records_blog_base_path(tmp_path):
     assert payload["site"] == {"title": "暗獸歌劇", "original_title": "Kedamono Opera"}
 
 
+def test_cmd_set_credits_records_acknowledgements_separately(tmp_path):
+    style_path = tmp_path / "style-decisions.json"
+    _seed_style(style_path)
+    parser = sd.build_parser()
+
+    args = parser.parse_args(
+        [
+            "--style", str(style_path),
+            "--schema", str(SCHEMA_PATH),
+            "set-credits",
+            "--entry", "翻譯:譯者甲",
+            "--acknowledgement", "Reference Author: 參考了先前的社群翻譯",
+            "--show-on-homepage", "true",
+        ]
+    )
+    args.func(args)
+
+    credits = json.loads(style_path.read_text(encoding="utf-8"))["credits"]
+    assert credits == {
+        "entries": [{"role": "翻譯", "name": "譯者甲"}],
+        "acknowledgements": [{"name": "Reference Author", "note": "參考了先前的社群翻譯"}],
+        "show_on_homepage": True,
+    }
+
+
+@pytest.mark.parametrize("value", ["沒有冒號", ":只有說明", "只有名稱:"])
+def test_parse_acknowledgement_rejects_incomplete(value):
+    with pytest.raises(argparse.ArgumentTypeError):
+        sd.parse_acknowledgement(value)
+
+
+def test_schema_rejects_acknowledgement_without_note():
+    payload = sdl.default_style_decisions_payload()
+    payload["credits"] = {"acknowledgements": [{"name": "Reference Author"}]}
+    schema = sdl.load_style_decisions_schema(SCHEMA_PATH)
+
+    errors = sdl.validate_style_decisions_payload(payload, schema)
+
+    assert any("note" in error for error in errors)
+
+
 def test_cmd_set_theme_merges_without_dropping_existing(tmp_path):
     style_path = tmp_path / "style-decisions.json"
     _seed_style(style_path)

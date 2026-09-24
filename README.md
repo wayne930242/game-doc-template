@@ -363,6 +363,7 @@ GitHub Pages 是純靜態託管，沒有 middleware，無法做密碼保護—�
    | `original_title` | `site.original_title`（必填，未記錄時匯出失敗） |
    | `cover` | `images.hero`（其次 `images.og`）存在時複製為 `cover.<副檔名>`，否則為 `null` |
    | `credits` | `credits.entries`，須包含翻譯署名 |
+   | `acknowledgements` | `credits.acknowledgements`（`{name, note}`），未設定時為空陣列 |
    | `progress` | `data/translation-progress.json` 的完成章數／總章數；檔案不存在時為 `null` |
    | `updated_at` | 最後一次 commit 時間 |
    | `source_repo` | `git remote origin` 的 `owner/repo` |

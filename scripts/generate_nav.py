@@ -178,7 +178,9 @@ def generate_index(chapters: dict, style: dict, mode: str = "zh_only", hero_imag
     copyright_cfg = style.get("copyright", {})
     credits_cfg = style.get("credits", {})
     has_copyright = copyright_cfg.get("show_on_homepage") and copyright_cfg.get("text")
-    has_credits = credits_cfg.get("show_on_homepage") and credits_cfg.get("entries")
+    credit_entries = credits_cfg.get("entries", [])
+    acknowledgements = credits_cfg.get("acknowledgements", [])
+    has_credits = credits_cfg.get("show_on_homepage") and (credit_entries or acknowledgements)
 
     if has_copyright:
         lines += [
@@ -188,17 +190,19 @@ def generate_index(chapters: dict, style: dict, mode: str = "zh_only", hero_imag
             "",
         ]
     if has_credits:
-        lines += [
-            "## 製作名單",
-            "",
-            "| 職責 | 人員 |",
-            "| --- | --- |",
-        ]
-        for entry in credits_cfg["entries"]:
-            role = entry.get("role", "")
-            name = entry.get("name", "")
-            lines.append(f"| {role} | {name} |")
-        lines.append("")
+        lines += ["## 製作名單", ""]
+        if credit_entries:
+            lines += ["| 職責 | 人員 |", "| --- | --- |"]
+            for entry in credit_entries:
+                role = entry.get("role", "")
+                name = entry.get("name", "")
+                lines.append(f"| {role} | {name} |")
+            lines.append("")
+        if acknowledgements:
+            lines += ["### 致謝", ""]
+            for ack in acknowledgements:
+                lines.append(f"- {ack['name']}：{ack['note']}")
+            lines.append("")
     if not has_copyright and not has_credits:
         lines += [
             "## 聲明",

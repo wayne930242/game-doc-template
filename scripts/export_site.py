@@ -122,6 +122,7 @@ def build_manifest(
         "base_path": f"{base_path}/",
         "cover": cover,
         "credits": credits,
+        "acknowledgements": style.get("credits", {}).get("acknowledgements", []),
         "progress": progress_counts(progress),
         "updated_at": updated_at,
         "source_repo": source_repo,

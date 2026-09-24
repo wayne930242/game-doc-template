@@ -69,6 +69,17 @@ def parse_credit_entry(value: str) -> dict[str, str]:
     return {"role": role, "name": name}
 
 
+def parse_acknowledgement(value: str) -> dict[str, str]:
+    if ":" not in value:
+        raise argparse.ArgumentTypeError("acknowledgement 必須使用 '名稱:說明' 格式")
+    name, note = value.split(":", 1)
+    name = name.strip()
+    note = note.strip()
+    if not name or not note:
+        raise argparse.ArgumentTypeError("acknowledgement 必須同時包含名稱與說明")
+    return {"name": name, "note": note}
+
+
 def load_existing_or_default(style_path: Path, schema_path: Path) -> dict[str, Any]:
     existing = load_style_decisions(style_path)
     if existing is None:
@@ -299,6 +310,8 @@ def cmd_set_credits(args: argparse.Namespace) -> None:
     patch: dict[str, Any] = {"credits": {}}
     if args.entry:
         patch["credits"]["entries"] = args.entry
+    if args.acknowledgement:
+        patch["credits"]["acknowledgements"] = args.acknowledgement
     if args.show_on_homepage is not None:
         patch["credits"]["show_on_homepage"] = args.show_on_homepage
     if not patch["credits"]:
@@ -428,6 +441,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_credits = sub.add_parser("set-credits", help="Update credits entries.")
     p_credits.add_argument("--entry", type=parse_credit_entry, action="append")
+    p_credits.add_argument("--acknowledgement", type=parse_acknowledgement, action="append")
     p_credits.add_argument("--show-on-homepage", type=parse_bool)
     p_credits.set_defaults(func=cmd_set_credits)
 

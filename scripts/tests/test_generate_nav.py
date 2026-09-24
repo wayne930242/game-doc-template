@@ -265,6 +265,52 @@ class TestGenerateIndexHeroImage:
         assert "  image:\n    file: ../../assets/hero.jpg\n" in result
 
 
+class TestGenerateIndexCredits:
+    def credits_style(self, **credits):
+        return {"credits": {"show_on_homepage": True, **credits}}
+
+    def test_acknowledgements_follow_role_table(self):
+        style = self.credits_style(
+            entries=[{"role": "翻譯", "name": "譯者甲"}],
+            acknowledgements=[{"name": "Reference Author", "note": "參考了先前的社群翻譯"}],
+        )
+
+        result = gn.generate_index(SAMPLE_CHAPTERS, style)
+
+        assert (
+            "## 製作名單\n\n| 職責 | 人員 |\n| --- | --- |\n| 翻譯 | 譯者甲 |\n\n"
+            "### 致謝\n\n- Reference Author：參考了先前的社群翻譯\n"
+        ) in result
+        assert "Reference Author |" not in result
+
+    def test_acknowledgements_alone_render_without_table(self):
+        style = self.credits_style(acknowledgements=[{"name": "Reference Author", "note": "說明"}])
+
+        result = gn.generate_index(SAMPLE_CHAPTERS, style)
+
+        assert "## 製作名單\n\n### 致謝\n\n- Reference Author：說明\n" in result
+        assert "| 職責 | 人員 |" not in result
+
+    def test_acknowledgements_hidden_when_credits_not_on_homepage(self):
+        style = {
+            "credits": {
+                "show_on_homepage": False,
+                "entries": [{"role": "翻譯", "name": "譯者甲"}],
+                "acknowledgements": [{"name": "Reference Author", "note": "說明"}],
+            }
+        }
+
+        result = gn.generate_index(SAMPLE_CHAPTERS, style)
+
+        assert "致謝" not in result
+        assert "製作名單" not in result
+
+    def test_no_acknowledgement_block_without_acknowledgements(self):
+        style = self.credits_style(entries=[{"role": "翻譯", "name": "譯者甲"}])
+
+        assert "致謝" not in gn.generate_index(SAMPLE_CHAPTERS, style)
+
+
 COLLAPSED_CONFIG = (
     "export default defineConfig({\n"
     "\tintegrations: [\n"

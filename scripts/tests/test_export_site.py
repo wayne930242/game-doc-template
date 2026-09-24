@@ -66,10 +66,18 @@ class TestManifest:
             "base_path": "/books/kedamono-opera/",
             "cover": "cover.jpg",
             "credits": [{"role": "翻譯", "name": "洪偉"}],
+            "acknowledgements": [],
             "progress": {"completed": 2, "total": 3},
             "updated_at": "2026-09-24T12:00:00+08:00",
             "source_repo": "wayne930242/kedamono-opera",
         }
+
+    def test_acknowledgements_are_exported_apart_from_credits(self):
+        ack = {"name": "Reference Author", "note": "參考了先前的社群翻譯"}
+        credits = {"entries": [{"role": "翻譯", "name": "洪偉"}], "acknowledgements": [ack]}
+        manifest = make_manifest(blog_style(credits=credits))
+        assert manifest["credits"] == [{"role": "翻譯", "name": "洪偉"}]
+        assert manifest["acknowledgements"] == [ack]
 
     def test_missing_original_title_fails(self):
         with pytest.raises(ExportError, match="original_title"):
