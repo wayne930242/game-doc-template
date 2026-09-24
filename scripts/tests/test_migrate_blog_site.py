@@ -84,3 +84,11 @@ def test_flags_translation_credit_in_a_deep_page(tmp_path):
     page.write_text("---\ntitle: 規則\n---\n譯者：另一位譯者。", encoding="utf-8")
     _, _, warnings = migrate_blog_site.derive_metadata(repo, "洪偉")
     assert any("rules.md" in warning for warning in warnings)
+
+
+def test_confirmed_credits_replace_derived_entries(tmp_path):
+    repo = fixture_site(tmp_path, title="武林知心", home="---\ntitle: 武林知心\n---\n核心規則的翻譯由 zuzu 提供。整份文稿由洪偉整理。")
+    credits = [migrate_blog_site.parse_credit("核心規則翻譯=zuzu"), migrate_blog_site.parse_credit("整理=洪偉")]
+    style, missing, _ = migrate_blog_site.derive_metadata(repo, original_title="Hearts of Wulin", credits=credits)
+    assert not missing
+    assert style["credits"]["entries"] == [{"role": "核心規則翻譯", "name": "zuzu"}, {"role": "整理", "name": "洪偉"}]

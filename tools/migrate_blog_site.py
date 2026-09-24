@@ -90,6 +90,7 @@ def derive_metadata(
     translator: str | None = None,
     title: str | None = None,
     original_title: str | None = None,
+    credits: list[dict] | None = None,
 ) -> tuple[dict, list[str], list[str]]:
     style_path = repo / "style-decisions.json"
     style = json.loads(style_path.read_text(encoding="utf-8")) if style_path.is_file() else {}
@@ -116,8 +117,12 @@ def derive_metadata(
         site["title"] = title
     if original_title:
         site["original_title"] = original_title
+    if credits:
+        if not any("翻譯" in entry["role"] for entry in credits):
+            raise ValueError("Confirmed credits need at least one role containing 翻譯")
+        style["credits"] = {**style.get("credits", {}), "entries": credits}
     recorded = recorded_translators(style, index)
-    credit = translator or (recorded[0] if len(recorded) == 1 else None)
+    credit = translator or (recorded[0] if len(recorded) == 1 else None) or ("confirmed" if credits else None)
     missing = [field for field in ("title", "original_title") if not site.get(field)]
     if not credit:
         missing.append("translator")
@@ -128,7 +133,7 @@ def derive_metadata(
         warnings.append("Style decisions record an existing translation baseline; inspect attribution")
     if re.search(r"既有譯名|既有.{0,10}翻譯|社群翻譯", json.dumps(style, ensure_ascii=False)):
         warnings.append("Style decisions mention another translation; inspect attribution")
-    if credit:
+    if credit and not credits:
         entries = style.setdefault("credits", {}).setdefault("entries", [])
         if not any("翻譯" in entry.get("role", "") and entry.get("name") == credit for entry in entries):
             entries.append({"role": "翻譯", "name": credit})
@@ -155,13 +160,14 @@ def migrate(
     *,
     title: str | None = None,
     original_title: str | None = None,
+    credits: list[dict] | None = None,
 ) -> dict:
     repo = repo.resolve()
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
         raise ValueError("slug must use lowercase letters, digits, and hyphens")
     if not (repo / "docs/astro.config.mjs").is_file() or not (repo / "docs/src/content/docs").is_dir():
         raise ValueError(f"Not a book checkout: {repo}")
-    style, missing, warnings = derive_metadata(repo, translator, title, original_title)
+    style, missing, warnings = derive_metadata(repo, translator, title, original_title, credits)
     report = {"repo": str(repo), "slug": slug, "metadata": {"title": style["site"].get("title"), "original_title": style["site"].get("original_title"), "credits": style.get("credits", {}).get("entries", [])}, "missing": missing, "warnings": warnings, "applied": False}
     if missing or not apply:
         return report
@@ -193,6 +199,13 @@ def migrate(
     return report
 
 
+def parse_credit(value: str) -> dict:
+    role, sep, name = value.partition("=")
+    if not sep or not role.strip() or not name.strip():
+        raise argparse.ArgumentTypeError("credit must be ROLE=NAME")
+    return {"role": role.strip(), "name": name.strip()}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, required=True, help="Existing book checkout")
@@ -200,10 +213,11 @@ def main() -> int:
     parser.add_argument("--translator", help="Confirmed translator when not recorded by the book")
     parser.add_argument("--title", help="Confirmed translated title when not recorded by the book")
     parser.add_argument("--original-title", help="Confirmed original title when not recorded by the book")
+    parser.add_argument("--credit", action="append", type=parse_credit, metavar="ROLE=NAME", help="Confirmed credit entry, repeatable; replaces the book's recorded credits")
     parser.add_argument("--apply", action="store_true", help="Write the migration into the checkout")
     args = parser.parse_args()
     try:
-        report = migrate(args.repo, args.slug, args.translator, args.apply, title=args.title, original_title=args.original_title)
+        report = migrate(args.repo, args.slug, args.translator, args.apply, title=args.title, original_title=args.original_title, credits=args.credit)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         print(f"Migration error: {exc}", file=sys.stderr)
         return 1
