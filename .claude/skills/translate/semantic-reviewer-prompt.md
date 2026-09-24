@@ -35,7 +35,7 @@ Review only semantic and language quality:
 1. Every source statement, example, exception, table-cell meaning, and rules condition is translated.
 2. Mechanics, quantities, timing, permissions, prohibitions, and cross-references retain their exact effect.
 3. The draft adds no unsupported rule, setting fact, explanation, or conclusion.
-4. Managed terms follow the glossary and proper nouns follow the project policy.
+4. Managed terms follow the glossary, proper nouns follow the project policy, and first-occurrence term glosses follow `translation.term_gloss` and translator-style rule 6.
 5. Chinese reads naturally in Taiwan usage without English clause order, unsupported literary flourish, Simplified Chinese, or Mainland/Hong Kong-specific wording.
 6. The translation fits the whole-book and chapter context without importing content from another chapter.
 

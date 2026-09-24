@@ -305,3 +305,44 @@ def test_validate_style_decisions_accepts_default_payload(monkeypatch, tmp_path)
     monkeypatch.setattr(vsd, "parse_args", lambda: args)
 
     vsd.main()
+
+
+@pytest.mark.parametrize("language", ["ja", "en", "zh-Hant", "none"])
+def test_set_term_gloss_records_language(tmp_path, language):
+    style_path = tmp_path / "style-decisions.json"
+    _seed_style(style_path)
+
+    args = sd.build_parser().parse_args(
+        ["--style", str(style_path), "--schema", str(SCHEMA_PATH), "set-term-gloss", "--language", language]
+    )
+    args.func(args)
+
+    payload = json.loads(style_path.read_text(encoding="utf-8"))
+    assert payload["translation"]["term_gloss"] == language
+    assert payload["translation_mode"]["mode"] == "full"
+
+
+@pytest.mark.parametrize("language", ["Japanese", "", "JA", "source"])
+def test_set_term_gloss_rejects_non_language_values(tmp_path, language):
+    style_path = tmp_path / "style-decisions.json"
+    _seed_style(style_path)
+
+    args = sd.build_parser().parse_args(
+        ["--style", str(style_path), "--schema", str(SCHEMA_PATH), "set-term-gloss", "--language", language]
+    )
+    with pytest.raises(ValueError, match="translation.term_gloss"):
+        args.func(args)
+
+
+def test_set_term_gloss_requires_language():
+    with pytest.raises(SystemExit):
+        sd.build_parser().parse_args(["set-term-gloss"])
+
+
+def test_schema_rejects_unknown_translation_field():
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    payload = {"_meta": {"description": "x", "updated": ""}, "translation": {"gloss": "ja"}}
+
+    errors = sdl.validate_style_decisions_payload(payload, schema)
+
+    assert errors

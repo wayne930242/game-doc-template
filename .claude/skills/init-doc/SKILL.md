@@ -141,7 +141,22 @@ uv run python scripts/style_decisions.py set-translation-mode \
   --reason "使用者在 init-doc 選擇翻譯模式"
 ```
 
-**Verification:** `style-decisions.json` contains `document_format` section and `translation_mode` section; `validate_style_decisions.py` exits 0.
+Ask which language's original term glosses a mechanic term's first occurrence (translator-style rule 6), in Traditional Chinese. The default is the source text's language. When the source is a translated edition, offer the work's original language; also offer no gloss:
+
+```text
+術語首次出現時，括號內要附哪種語言的原文？
+A. 來源文本的語言（預設，例：<source_language>）
+B. 作品原文語言（來源為譯本時，例：<original_language>）
+C. 不附原文
+```
+
+Persist the BCP 47 tag of the chosen language, or `none`:
+
+```bash
+uv run python scripts/style_decisions.py set-term-gloss --language "<tag|none>"
+```
+
+**Verification:** `style-decisions.json` contains `document_format`, `translation_mode`, and `translation.term_gloss`; `validate_style_decisions.py` exits 0.
 
 ### Step 6: Select Images, Theme, and Homepage Content
 

@@ -27,6 +27,7 @@
         },
         "is_term": { "type": "boolean" },
         "keep_english": { "type": "boolean" },
+        "original_term": { "type": "string", "minLength": 1 },
         "forbidden": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }

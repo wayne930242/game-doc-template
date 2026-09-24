@@ -261,6 +261,11 @@ def cmd_set_translation_mode(args: argparse.Namespace) -> None:
     print(f"✓ 已更新翻譯模式: {args.style}")
 
 
+def cmd_set_term_gloss(args: argparse.Namespace) -> None:
+    merge_and_save(args.style, args.schema, {"translation": {"term_gloss": args.language}})
+    print(f"✓ 已更新術語註記語言: {args.style}")
+
+
 def cmd_add_translation_note(args: argparse.Namespace) -> None:
     payload = load_existing_or_default(args.style, args.schema)
     translation_notes = payload.setdefault("translation_notes", {})
@@ -426,6 +431,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_mode.add_argument("--mode", required=True, choices=("full", "summary", "bilingual"))
     p_mode.add_argument("--reason")
     p_mode.set_defaults(func=cmd_set_translation_mode)
+
+    p_gloss = sub.add_parser(
+        "set-term-gloss",
+        help="Set the language glossed after a mechanic term's first occurrence.",
+    )
+    p_gloss.add_argument(
+        "--language",
+        required=True,
+        help="BCP 47 tag of the glossed original term (e.g. en, ja), or none",
+    )
+    p_gloss.set_defaults(func=cmd_set_term_gloss)
 
     p_note = sub.add_parser("add-translation-note", help="Add or replace a translation note.")
     p_note.add_argument("--document-key")

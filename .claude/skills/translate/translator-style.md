@@ -11,7 +11,10 @@ Shared by `translate` and `bilingual-translate`. The deprecated `super-translate
 3. **Register (rule text, procedures, general prose)**: refined colloquial (典雅口語化). Never Mainland Chinese wording (支語). Never sloppy internet-casual phrasing. Never classical/literary Chinese (文言) — this applies to prose AND to proper-noun/terminology translations specifically; an archaic-sounding term name is a defect, not a flourish.
 4. **Register exception — play examples**: dialogue-style "example of play" sections (GM/players talking through a scene) loosen up: casual, relaxed, slang-inheriting, like an actual table conversation. Do not apply rule 3's elegant-colloquial baseline inside these blocks.
 5. **Point of view**: preserve the source's second-person address ("you") exactly; do not convert to third-person ("the player").
-6. **Terminology glossing**: on a mechanic term's first occurrence in a document, follow the Chinese term with the original English in parentheses, e.g. 守密人（Warden）. Do not repeat the gloss on later occurrences in the same document.
+6. **Terminology glossing**: on a mechanic term's first occurrence in a document, follow the Chinese term with the original term in parentheses, in the language recorded as `translation.term_gloss` in `style-decisions.json`. Do not repeat the gloss on later occurrences in the same document.
+   - Absent, or equal to the source text's language: gloss with the source term, e.g. 守密人（Warden）.
+   - Another language (the source text is a translated edition): gloss only when that language's term is known from the glossary entry's `original_term` or an approved source; otherwise write no gloss.
+   - `none`: write no gloss.
 7. **Sentence structure**: break long source sentences into multiple short Chinese sentences. Never mirror the source's clause structure/length 1:1.
 8. **Biggest red flag**: forcing English grammar onto Chinese (translation-ese/Europeanized Chinese) — the single most common failure mode; actively hunt for it in self-review.
 

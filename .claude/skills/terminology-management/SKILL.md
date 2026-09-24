@@ -65,6 +65,12 @@ For unmanaged terms, evidence is read from cache (populated by `term_cal_batch.p
 uv run python scripts/term_edit.py --term "<TERM>" --set-zh "<ZH_TERM>" --status approved --mark-term
 ```
 
+When `translation.term_gloss` in `style-decisions.json` names a language other than the source text's, record a term's original-language form for its gloss once it is known from the original work or an approved source:
+
+```bash
+uv run python scripts/term_edit.py --term "<TERM>" --set-original-term "<ORIGINAL_TERM>"
+```
+
 To inspect evidence for a single term without editing:
 
 ```bash

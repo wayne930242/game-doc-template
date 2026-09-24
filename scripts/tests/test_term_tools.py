@@ -67,6 +67,7 @@ def _edit_args(**overrides: object) -> argparse.Namespace:
         "unmark_term": False,
         "forbidden": [],
         "keep_english": False,
+        "set_original_term": None,
         "force": False,
     }
     base.update(overrides)
@@ -104,6 +105,25 @@ def test_mutate_term_force_skips_cal_and_updates_entry(monkeypatch):
     assert changed is True
     assert glossary["Stress"]["zh"] == "壓力"
     assert glossary["Stress"]["is_term"] is True
+
+
+def test_mutate_term_sets_original_term_under_schema(monkeypatch):
+    glossary = {"_meta": {"description": "x", "updated": ""}}
+    monkeypatch.setattr(te, "save_glossary", lambda _path, _glossary: None)
+
+    args = _edit_args(set_zh=None, notes=None, status=None, mark_term=False, set_original_term="ストレス", force=True)
+
+    assert te.mutate_term(args, glossary) is True
+    assert glossary["Stress"]["original_term"] == "ストレス"
+
+
+def test_mutate_term_rejects_empty_original_term(monkeypatch):
+    glossary = {"_meta": {"description": "x", "updated": ""}}
+    monkeypatch.setattr(te, "save_glossary", lambda _path, _glossary: None)
+
+    args = _edit_args(set_zh=None, notes=None, status=None, mark_term=False, set_original_term="", force=True)
+
+    assert te.mutate_term(args, glossary) is False
 
 
 def test_mutate_term_without_mutation_flags_returns_false(monkeypatch):

@@ -50,6 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--unmark-term", action="store_true")
     parser.add_argument("--forbidden", action="append", default=[], help="Forbidden variant (repeatable).")
     parser.add_argument("--keep-english", action="store_true")
+    parser.add_argument("--set-original-term", type=str, help="Set the original-language term used as the gloss.")
     parser.add_argument("--force", action="store_true", help="Bypass --cal requirement for unmanaged terms.")
     return parser.parse_args()
 
@@ -136,6 +137,7 @@ def mutate_term(args: argparse.Namespace, glossary: dict[str, Any]) -> bool:
             args.unmark_term,
             bool(args.forbidden),
             args.keep_english,
+            args.set_original_term is not None,
             args.remove,
         ]
     )
@@ -181,6 +183,8 @@ def mutate_term(args: argparse.Namespace, glossary: dict[str, Any]) -> bool:
         entry["is_term"] = False
     if args.keep_english:
         entry["keep_english"] = True
+    if args.set_original_term is not None:
+        entry["original_term"] = args.set_original_term
     if args.forbidden:
         existing = entry.get("forbidden", [])
         merged = []
