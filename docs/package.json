@@ -5,10 +5,10 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro build && node search/build/index.mjs",
+    "build": "astro build && node search/build/index.mjs && node build/rebase-urls.mjs",
     "preview": "astro preview",
     "astro": "astro",
-    "test": "node --test search/**/*.test.mjs",
+    "test": "node --test search/**/*.test.mjs build/**/*.test.mjs",
     "verify-search": "node search/verify.mjs"
   },
   "dependencies": {

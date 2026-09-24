@@ -18,9 +18,7 @@ import tarfile
 from pathlib import Path
 from typing import Any
 
-from _style_decisions_lib import load_and_validate_style_decisions
-from generate_nav import deployment_base_path, update_astro_site_base, update_astro_site_title
-from repair_layout import layout_issues
+from site_config import deployment_base_path, update_astro_site_base, update_astro_site_title
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STYLE_FILE = PROJECT_ROOT / "style-decisions.json"
@@ -82,15 +80,22 @@ def cover_source(style: dict[str, Any], project_root: Path) -> Path | None:
     return None
 
 
-def progress_counts(progress: dict[str, Any]) -> dict[str, int]:
-    chapters = progress.get("chapters", [])
+def progress_counts(progress: dict[str, Any] | None) -> dict[str, int] | None:
+    if progress is None:
+        return None
+    chapters = progress.get("chapters")
+    if not isinstance(chapters, list):
+        # Older books track each file directly at the top level.
+        chapters = [entry for key, entry in progress.items() if key.endswith((".md", ".mdx")) and isinstance(entry, dict) and "status" in entry]
+    if not chapters:
+        return None
     completed = sum(1 for chapter in chapters if chapter.get("status") == "completed")
     return {"completed": completed, "total": len(chapters)}
 
 
 def build_manifest(
     style: dict[str, Any],
-    progress: dict[str, Any],
+    progress: dict[str, Any] | None,
     *,
     source_repo: str,
     updated_at: str,
@@ -106,6 +111,9 @@ def build_manifest(
     original_title = site.get("original_title")
     if not original_title:
         raise ExportError("site.original_title 未設定，請先執行 style_decisions.py set-site --original-title")
+    credits = style.get("credits", {}).get("entries", [])
+    if not any("翻譯" in entry.get("role", "") and entry.get("name") for entry in credits):
+        raise ExportError("credits.entries 缺少明確的翻譯署名")
     return {
         "slug": slug,
         "title": title,
@@ -113,7 +121,7 @@ def build_manifest(
         "description": site.get("description", ""),
         "base_path": f"{base_path}/",
         "cover": cover,
-        "credits": style.get("credits", {}).get("entries", []),
+        "credits": credits,
         "progress": progress_counts(progress),
         "updated_at": updated_at,
         "source_repo": source_repo,
@@ -195,6 +203,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build the site under the blog base path and export it with book.json.")
     parser.add_argument("--out", type=Path, required=True, help="Directory that receives the static site and book.json.")
     parser.add_argument("--clean", action="store_true", help="Replace the output directory when it is not empty.")
+    parser.add_argument("--check-layout", action="store_true", help="Apply the template's PDF layout quality gate before export.")
     parser.add_argument(
         "--archive",
         type=Path,
@@ -204,16 +213,19 @@ def parse_args() -> argparse.Namespace:
 
 
 def run(args: argparse.Namespace) -> None:
-    issues = layout_issues(PROJECT_ROOT)
-    if issues:
-        preview = "\n".join(f"  {issue}" for issue in issues[:20])
-        raise ExportError(f"網站仍有 {len(issues)} 個 PDF 版面殘留；先執行 scripts/repair_layout.py：\n{preview}")
-    style = load_and_validate_style_decisions(STYLE_FILE)
+    if getattr(args, "check_layout", False):
+        from repair_layout import layout_issues
+
+        issues = layout_issues(PROJECT_ROOT)
+        if issues:
+            preview = "\n".join(f"  {issue}" for issue in issues[:20])
+            raise ExportError(f"網站仍有 {len(issues)} 個 PDF 版面殘留；先執行 scripts/repair_layout.py：\n{preview}")
+    if not STYLE_FILE.is_file():
+        raise ExportError(f"找不到 style decisions：{STYLE_FILE}")
+    style = json.loads(STYLE_FILE.read_text(encoding="utf-8"))
     base_path = blog_base_path(style)
     assert_config_synced(ASTRO_CONFIG.read_text(encoding="utf-8"), style)
-    if not PROGRESS_FILE.exists():
-        raise ExportError(f"找不到翻譯進度檔：{PROGRESS_FILE}")
-    progress = json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
+    progress = json.loads(PROGRESS_FILE.read_text(encoding="utf-8")) if PROGRESS_FILE.exists() else None
     source_repo = source_repo_from_remote(git_output("remote", "get-url", "origin"))
     updated_at = git_output("log", "-1", "--format=%cI")
 

@@ -72,6 +72,17 @@ class TestManifest:
     def test_cover_is_null_when_not_recorded(self):
         assert make_manifest(blog_style())["cover"] is None
 
+    def test_missing_progress_is_null(self):
+        assert build_manifest(blog_style(), None, source_repo="wayne930242/x", updated_at="2026-09-24", cover=None)["progress"] is None
+
+    def test_old_path_keyed_progress_is_counted(self):
+        old = {"_meta": {}, "a.md": {"status": "completed"}, "b.md": {"status": "in_progress"}}
+        assert build_manifest(blog_style(), old, source_repo="wayne930242/x", updated_at="2026-09-24", cover=None)["progress"] == {"completed": 1, "total": 2}
+
+    def test_missing_translator_fails(self):
+        with pytest.raises(ExportError, match="翻譯署名"):
+            make_manifest(blog_style(credits={"entries": []}))
+
     def test_rejects_non_blog_target(self):
         style = blog_style(deployment={"target": "root", "base_path": "/books/x"})
         with pytest.raises(ExportError, match="blog"):
@@ -155,6 +166,11 @@ class TestSiteTitleConfig:
     def test_escapes_quotes_and_backslashes(self):
         result = update_astro_site_title(TEMPLATE_CONFIG, {"site": {"title": "It's a \\ test"}})
         assert "\ttitle: 'It\\'s a \\\\ test',\n" in result
+
+    def test_updates_double_quoted_legacy_title(self):
+        config = TEMPLATE_CONFIG.replace("title: '遊戲規則文件'", 'title: "舊標題"')
+        result = update_astro_site_title(config, {"site": {"title": "新標題"}})
+        assert 'title: "新標題"' in result
 
     def test_keeps_config_without_recorded_title(self):
         assert update_astro_site_title(TEMPLATE_CONFIG, {}) == TEMPLATE_CONFIG

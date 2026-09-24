@@ -219,7 +219,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
    uv run python scripts/export_site.py --out <dir> --clean  # 覆寫既有輸出
    ```
 
-   指令會先確認 `astro.config.mjs` 的 `base` 與網站標題與 `style-decisions.json` 一致，接著執行 `bun run build`（含 zh-TW 搜尋後處理），再掃描所有 HTML／CSS，只要有網址跳出 `/books/<slug>/` 就中止並列出位置。通過後把靜態輸出複製到 `<dir>/`，並寫入 `<dir>/book.json`。結束時會印出檔案數與總大小（blog 的 Vercel 部署有檔案數限制）。
+   指令會先確認 `astro.config.mjs` 的 `base` 與網站標題與 `style-decisions.json` 一致，接著執行 `bun run build`（含 zh-TW 搜尋後處理與站內網址改寫），再掃描所有 HTML／CSS。通過後把靜態輸出複製到 `<dir>/`，並寫入 `<dir>/book.json`。結束時會印出檔案數與總大小（blog 的 Vercel 部署有檔案數限制）。
 
 3. `book.json` 的欄位全部取自專案既有資料，不需逐專案手填：
 
@@ -229,8 +229,8 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
    | `title`、`description` | `site.title`、`site.description` |
    | `original_title` | `site.original_title`（必填，未記錄時匯出失敗） |
    | `cover` | `images.hero`（其次 `images.og`）存在時複製為 `cover.<副檔名>`，否則為 `null` |
-   | `credits` | `credits.entries` |
-   | `progress` | `data/translation-progress.json` 的完成章數／總章數 |
+   | `credits` | `credits.entries`，須包含翻譯署名 |
+   | `progress` | `data/translation-progress.json` 的完成章數／總章數；檔案不存在時為 `null` |
    | `updated_at` | 最後一次 commit 時間 |
    | `source_repo` | `git remote origin` 的 `owner/repo` |
 
@@ -254,7 +254,20 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 
    `--archive` 把 `<dir>/` 的內容（含 `book.json`）直接放在封存檔根目錄（封存檔不可放在 `<dir>/` 內），並套用 blog 的檢查：根目錄有 `index.html` 與 `book.json`，`base_path` 為 `/books/<slug>/`。
 
-內文中手寫的絕對連結（例如 `fix-ref` 產生的跨頁連結）不會被 Astro 自動加上 `base`，必須含 `/books/<slug>` 前綴；匯出時的網址掃描會抓出遺漏。
+建置後處理會依 Astro `base` 改寫 HTML／CSS 中的站內根路徑連結，原始 Markdown 與 MDX 保持原有寫法。根路徑部署不改寫；匯出時仍會掃描遺漏的網址。
+
+### 遷移既有書站
+
+在書站的獨立工作複本中執行範本的遷移工具。先省略 `--apply` 查看從 `style-decisions.json`、Astro 設定與首頁取得的書名、原文書名和譯者；缺值時補上已確認的 `--title`、`--original-title` 或 `--translator`。例如遷移 Vaesen：
+
+```bash
+python3 /Users/weihung/projects/game-doc-template/tools/migrate_blog_site.py --repo "$PWD" --slug vaesen-rpg --translator 洪偉
+python3 /Users/weihung/projects/game-doc-template/tools/migrate_blog_site.py --repo "$PWD" --slug vaesen-rpg --translator 洪偉 --apply
+(cd docs && SHARP_IGNORE_GLOBAL_LIBVIPS=1 bun install)
+python3 scripts/export_site.py --out /tmp/vaesen-book --archive /tmp/vaesen-book-export.tar.gz
+```
+
+遷移工具更新建置、搜尋、匯出與 GitHub release 工作流程，保留書站的 Markdown／MDX、首頁、側邊欄、圖片、元件、樣式及額外套件。重跑同一指令會維持相同設定。工具會提示書站記錄的其他譯者或來源譯本，供製作名單核對；確認後將 `docs/bun.lock` 與遷移檔案一起提交。
 
 ### GitHub Pages（獨立部署的 Public 專案）
 
