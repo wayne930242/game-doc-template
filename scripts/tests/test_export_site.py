@@ -15,7 +15,13 @@ from export_site import (
 )
 from generate_nav import deployment_base_path, update_astro_site_base, update_astro_site_title
 
-TEMPLATE_CONFIG = (Path(__file__).resolve().parents[2] / "docs" / "astro.config.mjs").read_text(encoding="utf-8")
+# Synced projects record their own title, so reset it to the template default the tests expect.
+TEMPLATE_CONFIG = re.sub(
+    r"\ttitle: '.*',\n",
+    "\ttitle: '遊戲規則文件',\n",
+    (Path(__file__).resolve().parents[2] / "docs" / "astro.config.mjs").read_text(encoding="utf-8"),
+    count=1,
+)
 
 CONFIG = "import x from 'y';\n\nexport default defineConfig({\n\tmarkdown: {},\n});\n"
 
@@ -176,8 +182,7 @@ class TestSiteTitleConfig:
         assert update_astro_site_title(TEMPLATE_CONFIG, {}) == TEMPLATE_CONFIG
 
     def test_sync_check_rejects_template_default_title(self):
-        default_title = re.sub(r"\ttitle: '.*',\n", "\ttitle: '遊戲規則文件',\n", TEMPLATE_CONFIG, count=1)
-        with_base = update_astro_site_base(default_title, blog_style())
+        with_base = update_astro_site_base(TEMPLATE_CONFIG, blog_style())
         with pytest.raises(ExportError, match="網站標題"):
             assert_config_synced(with_base, blog_style())
         assert_config_synced(update_astro_site_title(with_base, blog_style()), blog_style())
