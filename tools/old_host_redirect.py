@@ -15,7 +15,6 @@ import re
 import sys
 from pathlib import Path
 
-BLOG_BOOKS_URL = "https://www.wayneh.tw/books"
 PAGES_SITE_DIR = "old-host-redirect"
 
 PAGES_WORKFLOW = f"""name: Deploy to GitHub Pages
@@ -104,13 +103,13 @@ def write_github_pages(repo: Path, target: str, pages_from: Path, old_base: str)
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--blog-books-url", default=BLOG_BOOKS_URL, help=f"Blog URL that holds the books (default {BLOG_BOOKS_URL})")
+    parser.add_argument("--blog-books-url", required=True, help="Host site URL that holds the books, such as https://example.com/books")
     hosts = parser.add_subparsers(dest="host", required=True)
     pages = hosts.add_parser("github-pages", help="Meta-refresh redirect site and workflow for a book repo")
     pages.add_argument("--slug", required=True, help="Blog slug of the book")
     pages.add_argument("--repo", type=Path, required=True, help="Book checkout that publishes GitHub Pages")
     pages.add_argument("--pages-from", type=Path, required=True, help="Build or export directory whose HTML pages list the old paths")
-    pages.add_argument("--old-base", default="", help="Path prefix of the old Pages site, such as /cairn-barebones-docs")
+    pages.add_argument("--old-base", default="", help="Path prefix of the old Pages site, such as /my-game-docs")
     args = parser.parse_args()
     try:
         target = target_base(args.slug, args.blog_books_url)

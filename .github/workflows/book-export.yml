@@ -1,8 +1,9 @@
 name: Book Export
 
 # Builds the blog export on every push to main and publishes it as the asset
-# book-export.tar.gz of one rolling release, then asks the blog to redeploy. The
-# blog's sync-books.mjs downloads it with `ref: "book-export"` in books.config.js.
+# book-export.tar.gz of one rolling release. When the BOOK_HOST_REPO repository
+# variable names the host site repo, it then sends that repo a `book-export`
+# repository_dispatch so the host pulls the new release.
 
 on:
   push:
@@ -18,7 +19,6 @@ concurrency:
 
 env:
   RELEASE_TAG: book-export
-  BLOG_REPO: wayne930242/knowledge-base
   SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
 
 jobs:
@@ -71,13 +71,19 @@ jobs:
               --target "$GITHUB_SHA" --title "Book export" --notes "$notes"
           fi
 
-      # BLOG_DISPATCH_TOKEN: fine-grained token with Contents read/write on BLOG_REPO.
-      - name: Ask the blog to redeploy
+      # BOOK_HOST_REPO (variable): owner/repo of the host site; unset skips this step.
+      # BLOG_DISPATCH_TOKEN (secret): fine-grained token with Contents read/write on it.
+      - name: Notify the host site
         env:
+          BOOK_HOST_REPO: ${{ vars.BOOK_HOST_REPO }}
           GH_TOKEN: ${{ secrets.BLOG_DISPATCH_TOKEN }}
         run: |
+          if [ -z "$BOOK_HOST_REPO" ]; then
+            echo "BOOK_HOST_REPO is not set; skipping the host site notification."
+            exit 0
+          fi
           if [ -z "$GH_TOKEN" ]; then
-            echo "::error title=Blog not notified::Set the BLOG_DISPATCH_TOKEN secret so the blog picks up this export."
+            echo "::error title=Host site not notified::BOOK_HOST_REPO is $BOOK_HOST_REPO but the BLOG_DISPATCH_TOKEN secret is not set."
             exit 1
           fi
-          gh api "repos/$BLOG_REPO/dispatches" -f event_type=book-export -f "client_payload[repo]=$GITHUB_REPOSITORY"
+          gh api "repos/$BOOK_HOST_REPO/dispatches" -f event_type=book-export -f "client_payload[repo]=$GITHUB_REPOSITORY"

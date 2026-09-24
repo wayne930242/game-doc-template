@@ -185,7 +185,7 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
    在 `docs/` 下執行 `bun dev`，檢查頁面、目錄、連結、圖片與主題樣式。
 
 10. 建置與部署  
-    完整執行 `translate all` 時會自動重建導覽、執行 `bun run build` 並驗證搜尋索引。推送到 `main` 後由 `book-export` workflow 匯出並發布給 blog；仍需獨立部署的專案才用 GitHub Pages 或 Vercel。詳見〈部署〉章節。
+    完整執行 `translate all` 時會自動重建導覽、執行 `bun run build` 並驗證搜尋索引。確認 `docs/dist/` 後部署——Public 專案優先用 GitHub Pages，需要密碼保護或私有部署則用 Vercel；也可匯出到集中放書的 host 網站。詳見〈部署〉章節。
 
 ---
 
@@ -199,117 +199,11 @@ Windows 使用者需啟用 `git config core.symlinks true` 並以系統管理員
 
 ## 部署
 
-**預設流程是匯出到 blog**：每本書仍是獨立的 Starlight 建置，但以子路徑 `/books/<slug>/` 併入 blog（wayneh.tw），由 blog 統一以共用密碼保護整個 `/books/` 路徑。只有仍需獨立部署的專案才使用下方的 GitHub Pages 或 Vercel 流程。
+先判斷專案可見度：**Public 專案優先用 GitHub Pages**（免費、不需額外服務、與現有 repo 直接整合）；需要密碼保護或私有部署，才用 Vercel。要把多本書集中放在同一個網站時，可改用〈匯出到 host 網站（可選）〉。
 
-部署目標與子路徑統一記錄在 `style-decisions.json` 的 `deployment`（`target` 為 `blog`、`github-pages` 或 `root`），`generate_nav.py` 依此寫入 `docs/astro.config.mjs` 的 `base`，並把首頁連結加上同樣的前綴。
+部署目標與子路徑記錄在 `style-decisions.json` 的 `deployment`（`target` 為 `github-pages`、`blog` 或 `root`；未設定時等同根路徑部署，Vercel 即使用此設定），`generate_nav.py` 依此寫入 `docs/astro.config.mjs` 的 `base`，並把首頁連結加上同樣的前綴。
 
-### 匯出到 blog（預設）
-
-1. 記錄子路徑（`new-project` 已預設寫入 `/books/<slug>`），並重建導覽讓 `base` 與首頁連結同步：
-
-   ```bash
-   uv run python scripts/style_decisions.py set-deployment --target blog --base-path /books/<slug>
-   uv run python scripts/generate_nav.py
-   ```
-
-2. 建置並匯出：
-
-   ```bash
-   uv run python scripts/export_site.py --out <dir>          # <dir> 須不存在或為空
-   uv run python scripts/export_site.py --out <dir> --clean  # 覆寫既有輸出
-   ```
-
-   指令會先確認 `astro.config.mjs` 的 `base` 與網站標題與 `style-decisions.json` 一致，接著執行 `bun run build`（含 zh-TW 搜尋後處理與站內網址改寫），再掃描所有 HTML／CSS。通過後把靜態輸出複製到 `<dir>/`，並寫入 `<dir>/book.json`。結束時會印出檔案數與總大小（blog 的 Vercel 部署有檔案數限制）。
-
-3. `book.json` 的欄位全部取自專案既有資料，不需逐專案手填：
-
-   | 欄位 | 來源 |
-   | --- | --- |
-   | `slug`、`base_path` | `deployment.base_path` |
-   | `title`、`description` | `site.title`、`site.description` |
-   | `original_title` | `site.original_title`（必填，未記錄時匯出失敗） |
-   | `cover` | `images.hero`（其次 `images.og`）存在時複製為 `cover.<副檔名>`，否則為 `null` |
-   | `credits` | `credits.entries`，須包含翻譯署名 |
-   | `progress` | `data/translation-progress.json` 的完成章數／總章數；檔案不存在時為 `null` |
-   | `updated_at` | 最後一次 commit 時間 |
-   | `source_repo` | `git remote origin` 的 `owner/repo` |
-
-4. 發布給 blog。blog 的 `scripts/sync-books.mjs` 依 `books.config.json` 的 `ref` 下載每本書 GitHub release 的 `book-export.tar.gz`，解開到 `public/books/<slug>/`。匯出內容不含 `middleware.ts` 與 `api/`，密碼保護由 blog 負責。
-
-   `.github/workflows/book-export.yml` 在每次推送到 `main` 時執行 `export_site.py --archive`，把封存檔上傳到固定的 rolling release `book-export`：release 不存在時以該 commit 建立，已存在時覆寫其 `book-export.tar.gz`，不需要手動發布。blog 的 `books.config.json` 以這個 tag 指定：
-
-   ```json
-   { "slug": "<slug>", "repo": "<owner>/<repo>", "ref": "book-export" }
-   ```
-
-   - 權限：workflow 宣告 `permissions: contents: write`，以內建 `GITHUB_TOKEN` 建立 release 與上傳資產；不需額外 secret。若 repo 或組織把 Actions 的預設權限設為唯讀，需在 Settings → Actions → General → Workflow permissions 允許 workflow 使用宣告的寫入權限。
-   - 內容：tag `book-export` 只標示 rolling release，不隨每次推送移動；實際內容的 commit 寫在 release 說明，`book.json` 的 `updated_at` 為該 commit 時間。
-   - 只有 `style-decisions.json` 的 `deployment.target` 為 `blog` 時才匯出；模板本身與獨立部署的專案會略過。
-
-   本機也可產生同一個封存檔檢查內容：
-
-   ```bash
-   uv run python scripts/export_site.py --out <dir> --clean --archive <dir>.tar.gz
-   ```
-
-   `--archive` 把 `<dir>/` 的內容（含 `book.json`）直接放在封存檔根目錄（封存檔不可放在 `<dir>/` 內），並套用 blog 的檢查：根目錄有 `index.html` 與 `book.json`，`base_path` 為 `/books/<slug>/`。
-
-建置後處理會依 Astro `base` 改寫 HTML／CSS 中的站內根路徑連結，原始 Markdown 與 MDX 保持原有寫法。根路徑部署不改寫；匯出時仍會掃描遺漏的網址。
-
-### 遷移既有書站
-
-在書站的獨立工作複本中執行範本的遷移工具。先省略 `--apply` 查看從 `style-decisions.json`、Astro 設定與首頁取得的書名、原文書名和譯者；缺值時補上已確認的 `--title`、`--original-title` 或 `--translator`。例如遷移 Vaesen：
-
-```bash
-python3 /Users/weihung/projects/game-doc-template/tools/migrate_blog_site.py --repo "$PWD" --slug vaesen-rpg --translator 洪偉
-python3 /Users/weihung/projects/game-doc-template/tools/migrate_blog_site.py --repo "$PWD" --slug vaesen-rpg --translator 洪偉 --apply
-(cd docs && SHARP_IGNORE_GLOBAL_LIBVIPS=1 bun install)
-python3 scripts/export_site.py --out /tmp/vaesen-book --archive /tmp/vaesen-book-export.tar.gz
-```
-
-遷移工具更新建置、搜尋、匯出與 GitHub release 工作流程，保留書站的 Markdown／MDX、首頁、側邊欄、圖片、元件、樣式及額外套件。重跑同一指令會維持相同設定。工具會提示書站記錄的其他譯者或來源譯本，供製作名單核對；確認後將 `docs/bun.lock` 與遷移檔案一起提交。
-
-推送後 `Book Export` 工作流程會更新 `book-export` release，並通知 blog 重新部署。書站 repo 需要 `BLOG_DISPATCH_TOKEN` secret：一個只授權 `wayne930242/knowledge-base`、Contents 可讀寫的 fine-grained token（GitHub 上名為 `blog-dispatch`，未設定時該步驟會失敗）。Token 存在 macOS Keychain 的 `blog-dispatch-token`，直接導入 GitHub、不顯示內容：
-
-```bash
-security find-generic-password -s blog-dispatch-token -w | gh secret set BLOG_DISPATCH_TOKEN --repo wayne930242/<repo>
-```
-
-Keychain 沒有這筆時，到 GitHub 重新產生 `blog-dispatch` token，複製後以 `security add-generic-password -U -a wayne930242 -s blog-dispatch-token -w "$(pbpaste)"` 存入。再把書加入 blog 的 `books.config.js`。
-
-#### 比對遷移前後的內容
-
-以遷移前的建置輸出（例如舊部署 commit 的 `docs/dist`）作為基準，與匯出目錄比對：
-
-```bash
-python3 /Users/weihung/projects/game-doc-template/tools/compare_blog_export.py <baseline-dist> /tmp/vaesen-book --base /books/vaesen-rpg
-```
-
-工具比對 HTML 頁面集合、每頁 `.sl-markdown-content` 的可見文字，並爬過匯出中每個站內 `href`／`src`／`srcset`／`poster`，這些連結都必須位於 `--base` 之下且指向存在的檔案。只差在空白的頁面列於 `whitespace_only_pages`，不算遺失（例如 LinkCard 間距或移除 `<!-- page N -->` 註解後留下的換行）。結束碼：`0` 表示沒有遺失，`1` 表示頁面、文字或連結有差異，`2` 表示輸入目錄無效。
-
-#### 舊網址轉址
-
-舊站在書站遷移後退役。`tools/old_host_redirect.py` 依 slug 產生 GitHub Pages 舊站的轉址內容，預設目標為 `https://www.wayneh.tw/books/<slug>/`。
-
-**Vercel 舊站**：確認書已在 blog 上線後，刪除舊的 Vercel 專案（舊網址隨之失效），並在書站 repo 移除舊的密碼閘門：
-
-```bash
-git rm middleware.ts api/site-auth.ts vercel.json
-git commit -m "chore: remove the old Vercel password gate"
-git push
-```
-
-**GitHub Pages 舊站**：Pages 無法送出 301，因此工具在書站 repo 寫入 `old-host-redirect/` 靜態轉址站與 `.github/workflows/deploy.yml`。每個舊頁面都有 meta refresh、canonical 連結及保留 query 與 fragment 的 script，`404.html` 將其他路徑去掉舊前綴後轉到 blog。`--pages-from` 提供舊頁面清單，使用該書的匯出目錄即可：
-
-```bash
-python3 /Users/weihung/projects/game-doc-template/tools/old_host_redirect.py github-pages --slug cairn-barebones --repo "$PWD" --pages-from /tmp/cairn-book --old-base /cairn-barebones-docs
-git add old-host-redirect .github/workflows/deploy.yml
-git commit -m "chore: redirect the old Pages site to the blog"
-git push
-```
-
-
-### GitHub Pages（獨立部署的 Public 專案）
+### GitHub Pages（Public 專案推薦）
 
 1. 記錄部署目標並重建導覽，`generate_nav.py` 會在 `docs/astro.config.mjs` 寫入 `site` 與 `base`：
 
@@ -373,7 +267,7 @@ git push
 
 GitHub Pages 是純靜態託管，沒有 middleware，無法做密碼保護——需要密碼保護時請改用下方的 Vercel 流程。
 
-### Vercel（獨立部署且需要密碼保護時使用）
+### Vercel（需要密碼保護或私有部署時使用）
 
 1. 推送到 GitHub
 2. 在 Vercel 匯入專案
@@ -381,7 +275,7 @@ GitHub Pages 是純靜態託管，沒有 middleware，無法做密碼保護—�
 
 ### 密碼保護（可選，僅 Vercel 支援）
 
-獨立部署到 Vercel 時，在環境變數設定 `SITE_PASSWORD` 即可啟用密碼保護（匯出到 blog 時不需要，由 blog 統一把關）：
+在 Vercel 環境變數設定 `SITE_PASSWORD` 即可啟用密碼保護：
 
 1. 進入 Vercel 專案設定 → Environment Variables
 2. 新增 `SITE_PASSWORD`，值為您想要的密碼
@@ -390,6 +284,107 @@ GitHub Pages 是純靜態託管，沒有 middleware，無法做密碼保護—�
 未設定此變數則不啟用保護。
 
 > **已知風險（刻意保留）**：`middleware.ts` 會放行社群平台爬蟲的 User-Agent（`facebookexternalhit`、`Twitterbot`、`Slackbot` 等），以便分享連結時能產生 OG 預覽。這代表任何人只要偽造 User-Agent（例如 `curl -A Twitterbot`）即可完整繞過密碼閘道。因此此功能**不是安全邊界**，僅能阻擋隨手點入的訪客，請勿用來保護機密或未授權散布的內容。若需要真正的存取控制，請改用平台層級的驗證（例如 Vercel Authentication）或不要公開部署。
+
+### 匯出到 host 網站（可選）
+
+每本書仍是獨立的 Starlight 建置，但以子路徑 `/books/<slug>/` 併入另一個 host 網站。書站 repo 把建置結果發布成 GitHub release `book-export`，由 host 網站下載後放到自己的 `/books/<slug>/`；密碼保護等存取控制由 host 網站負責。
+
+1. 記錄子路徑（在 `new-project` 選擇匯出到 host 網站時已寫入），並重建導覽讓 `base` 與首頁連結同步：
+
+   ```bash
+   uv run python scripts/style_decisions.py set-deployment --target blog --base-path /books/<slug>
+   uv run python scripts/generate_nav.py
+   ```
+
+2. 建置並匯出：
+
+   ```bash
+   uv run python scripts/export_site.py --out <dir>          # <dir> 須不存在或為空
+   uv run python scripts/export_site.py --out <dir> --clean  # 覆寫既有輸出
+   ```
+
+   指令會先確認 `astro.config.mjs` 的 `base` 與網站標題與 `style-decisions.json` 一致，接著執行 `bun run build`（含 zh-TW 搜尋後處理與站內網址改寫），再掃描所有 HTML／CSS。通過後把靜態輸出複製到 `<dir>/`，並寫入 `<dir>/book.json`。結束時會印出檔案數與總大小（部分 host 平台有檔案數限制）。
+
+3. `book.json` 的欄位全部取自專案既有資料，不需逐專案手填：
+
+   | 欄位 | 來源 |
+   | --- | --- |
+   | `slug`、`base_path` | `deployment.base_path` |
+   | `title`、`description` | `site.title`、`site.description` |
+   | `original_title` | `site.original_title`（必填，未記錄時匯出失敗） |
+   | `cover` | `images.hero`（其次 `images.og`）存在時複製為 `cover.<副檔名>`，否則為 `null` |
+   | `credits` | `credits.entries`，須包含翻譯署名 |
+   | `progress` | `data/translation-progress.json` 的完成章數／總章數；檔案不存在時為 `null` |
+   | `updated_at` | 最後一次 commit 時間 |
+   | `source_repo` | `git remote origin` 的 `owner/repo` |
+
+4. 發布給 host 網站。`.github/workflows/book-export.yml` 在每次推送到 `main` 時執行 `export_site.py --archive`，把封存檔上傳到固定的 rolling release `book-export`：release 不存在時以該 commit 建立，已存在時覆寫其 `book-export.tar.gz`，不需要手動發布。host 網站下載每本書 release `book-export` 的 `book-export.tar.gz`，解開到自己的 `/books/<slug>/`。匯出內容不含 `middleware.ts` 與 `api/`。
+
+   - 權限：workflow 宣告 `permissions: contents: write`，以內建 `GITHUB_TOKEN` 建立 release 與上傳資產；不需額外 secret。若 repo 或組織把 Actions 的預設權限設為唯讀，需在 Settings → Actions → General → Workflow permissions 允許 workflow 使用宣告的寫入權限。
+   - 內容：tag `book-export` 只標示 rolling release，不隨每次推送移動；實際內容的 commit 寫在 release 說明，`book.json` 的 `updated_at` 為該 commit 時間。
+   - 只有 `style-decisions.json` 的 `deployment.target` 為 `blog` 時才匯出；模板本身與 GitHub Pages、Vercel 專案會略過。
+   - 通知：在書站 repo 設定 repository variable `BOOK_HOST_REPO`（host 網站的 `<owner>/<repo>`）後，workflow 每次發布完會對該 repo 送出 `book-export` 的 `repository_dispatch`（`client_payload.repo` 為書站 repo），讓 host 網站重新部署。通知需要 secret `BLOG_DISPATCH_TOKEN`：一個只授權 host repo、Contents 可讀寫的 fine-grained token。未設定 `BOOK_HOST_REPO` 時略過通知；已設定但缺少 secret 時該步驟會失敗並說明原因。
+
+     ```bash
+     gh variable set BOOK_HOST_REPO --repo <owner>/<book-repo> --body <host-owner>/<host-repo>
+     gh secret set BLOG_DISPATCH_TOKEN --repo <owner>/<book-repo>   # 依提示貼上 token
+     ```
+
+   本機也可產生同一個封存檔檢查內容：
+
+   ```bash
+   uv run python scripts/export_site.py --out <dir> --clean --archive <dir>.tar.gz
+   ```
+
+   `--archive` 把 `<dir>/` 的內容（含 `book.json`）直接放在封存檔根目錄（封存檔不可放在 `<dir>/` 內），並套用 host 網站預期的檢查：根目錄有 `index.html` 與 `book.json`，`base_path` 為 `/books/<slug>/`。
+
+建置後處理會依 Astro `base` 改寫 HTML／CSS 中的站內根路徑連結，原始 Markdown 與 MDX 保持原有寫法。根路徑部署不改寫；匯出時仍會掃描遺漏的網址。
+
+### 將既有書站遷移到 host 網站
+
+在書站的獨立工作複本中執行範本的遷移工具（`<template>` 為本範本的工作複本路徑）。先省略 `--apply` 查看從 `style-decisions.json`、Astro 設定與首頁取得的書名、原文書名和譯者；缺值時補上已確認的 `--title`、`--original-title` 或 `--translator`：
+
+```bash
+python3 <template>/tools/migrate_blog_site.py --repo "$PWD" --slug <slug> --translator <譯者>
+python3 <template>/tools/migrate_blog_site.py --repo "$PWD" --slug <slug> --translator <譯者> --apply
+(cd docs && SHARP_IGNORE_GLOBAL_LIBVIPS=1 bun install)
+python3 scripts/export_site.py --out <dir> --archive <dir>.tar.gz
+```
+
+遷移工具更新建置、搜尋、匯出與 GitHub release 工作流程，保留書站的 Markdown／MDX、首頁、側邊欄、圖片、元件、樣式及額外套件。重跑同一指令會維持相同設定。工具會提示書站記錄的其他譯者或來源譯本，供製作名單核對；確認後將 `docs/bun.lock` 與遷移檔案一起提交。
+
+推送後 `Book Export` 工作流程會更新 `book-export` release；要通知 host 網站，依上方「通知」設定 `BOOK_HOST_REPO` 與 `BLOG_DISPATCH_TOKEN`，並在 host 網站加入這本書。
+
+#### 比對遷移前後的內容
+
+以遷移前的建置輸出（例如舊部署 commit 的 `docs/dist`）作為基準，與匯出目錄比對：
+
+```bash
+python3 <template>/tools/compare_blog_export.py <baseline-dist> <dir> --base /books/<slug>
+```
+
+工具比對 HTML 頁面集合、每頁 `.sl-markdown-content` 的可見文字，並爬過匯出中每個站內 `href`／`src`／`srcset`／`poster`，這些連結都必須位於 `--base` 之下且指向存在的檔案。只差在空白的頁面列於 `whitespace_only_pages`，不算遺失（例如 LinkCard 間距或移除 `<!-- page N -->` 註解後留下的換行）。結束碼：`0` 表示沒有遺失，`1` 表示頁面、文字或連結有差異，`2` 表示輸入目錄無效。
+
+#### 舊網址轉址
+
+舊站在書站遷移後退役。`tools/old_host_redirect.py` 依 slug 產生 GitHub Pages 舊站的轉址內容，目標為必填參數 `--blog-books-url` 指定的網址加上 `/<slug>/`（例如 `https://example.com/books`）。
+
+**Vercel 舊站**：確認書已在 host 網站上線後，刪除舊的 Vercel 專案（舊網址隨之失效），並在書站 repo 移除舊的密碼閘門：
+
+```bash
+git rm middleware.ts api/site-auth.ts vercel.json
+git commit -m "chore: remove the old Vercel password gate"
+git push
+```
+
+**GitHub Pages 舊站**：Pages 無法送出 301，因此工具在書站 repo 寫入 `old-host-redirect/` 靜態轉址站與 `.github/workflows/deploy.yml`。每個舊頁面都有 meta refresh、canonical 連結及保留 query 與 fragment 的 script，`404.html` 將其他路徑去掉舊前綴後轉到 host 網站。`--pages-from` 提供舊頁面清單，使用該書的匯出目錄即可：
+
+```bash
+python3 <template>/tools/old_host_redirect.py --blog-books-url <host-url>/books github-pages --slug <slug> --repo "$PWD" --pages-from <dir> --old-base /<old-repo-name>
+git add old-host-redirect .github/workflows/deploy.yml
+git commit -m "chore: redirect the old Pages site to the host site"
+git push
+```
 
 ### 手動建置
 

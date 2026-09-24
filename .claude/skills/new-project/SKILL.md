@@ -50,7 +50,12 @@ Collect via AskUserQuestion:
 - header: `儲存庫類型`
 - question: `GitHub 儲存庫要設為公開還是私有？`
 
-**Verification:** All four inputs collected and confirmed by user.
+5. Deployment
+- header: `部署方式`
+- question: `網站要怎麼部署？`
+- options, with the recommended one first: `GitHub Pages` (recommended for public repos), `Vercel` (recommended for private repos; optional `SITE_PASSWORD` gate), `匯出到 host 網站` (the book is served under `/books/<project_name>/` of a host site that pulls the `book-export` release)
+
+**Verification:** All five inputs collected and confirmed by user.
 
 ### Step 3: Resolve Variables
 
@@ -62,6 +67,7 @@ PDF_PATH="<pdf_path>"
 GAME_TITLE_EN="<derived_from_pdf_filename>"
 GAME_TITLE_ZH="<user_input>"
 REPO_VISIBILITY="<private_or_public>"
+DEPLOY_TARGET="<github-pages_or_vercel_or_blog>"
 REPO_URL="https://github.com/<username>/<project_name>"
 ```
 
@@ -129,23 +135,40 @@ uv run python scripts/style_decisions.py set-repository \
   --url "<REPO_URL>" \
   --show-on-homepage <true_or_false>
 uv run python scripts/style_decisions.py set-site --title "$GAME_TITLE_ZH" --original-title "$GAME_TITLE_EN"
-uv run python scripts/style_decisions.py set-deployment \
-  --target blog \
-  --base-path "/books/<project_name>"
 uv run python scripts/validate_style_decisions.py
 ```
 
-For the blog export, give the repo the secret that lets `Book Export` redeploy the blog. The token lives in the macOS Keychain as `blog-dispatch-token`; pipe it straight into GitHub without printing it:
+Record the deployment target so `generate_nav.py` and `fix-ref` generate correctly base-prefixed internal links:
 
-```bash
-security find-generic-password -s blog-dispatch-token -w | gh secret set BLOG_DISPATCH_TOKEN --repo "<username>/<project_name>"
-```
+- `github-pages`: see README.md's "GitHub Pages（Public 專案推薦）" section for the full recipe (workflow file, `gh api ... pages` enablement, etc.).
 
-If the Keychain has no entry, stop and ask the user to regenerate the `blog-dispatch` fine-grained token (Contents read/write on `wayne930242/knowledge-base` only) and store it with `security add-generic-password -U -a <username> -s blog-dispatch-token -w "$(pbpaste)"`.
+  ```bash
+  uv run python scripts/style_decisions.py set-deployment \
+    --target github-pages \
+    --base-path "/<project_name>"
+  ```
 
-Every project defaults to the blog export: the book is served at `/books/<project_name>/` inside the blog, so `generate_nav.py` writes that `base` and `fix-ref` prefixes internal links with it (see README.md「匯出到 blog（預設）」). Record `--target github-pages --base-path "/<project_name>"` or `--target root` instead only when the user asks for a standalone deployment.
+- `vercel`: do not set `deployment` — leave it unset so `generate_nav.py` defaults to root-relative links. The Vercel deploy and its `SITE_PASSWORD` gate use the template's `middleware.ts`, `api/site-auth.ts`, and `vercel.json` as they are.
 
-**Verification:** PDF exists in `data/pdfs/`; config files updated; `style-decisions.json.deployment` is `{"target": "blog", "base_path": "/books/<project_name>"}` unless the user chose a standalone deployment; `site.original_title` is set; for the blog export, `gh secret list --repo <username>/<project_name>` shows `BLOG_DISPATCH_TOKEN`.
+- `blog` (export to a host site): see README.md「匯出到 host 網站（可選）」.
+
+  ```bash
+  uv run python scripts/style_decisions.py set-deployment \
+    --target blog \
+    --base-path "/books/<project_name>"
+  ```
+
+  To have `Book Export` notify the host site after each export, ask the user for the host repo (`<owner>/<repo>`) and record it:
+
+  ```bash
+  gh variable set BOOK_HOST_REPO --repo "<username>/<project_name>" --body "<owner>/<repo>"
+  ```
+
+  The notification also needs a fine-grained token with Contents read/write on the host repo, which the user creates on GitHub. Ask the user to run `! gh secret set BLOG_DISPATCH_TOKEN --repo "<username>/<project_name>"`, which prompts them for the value so the token never enters the conversation.
+
+  Skip both when the user has no host repo to notify; the export still publishes the `book-export` release.
+
+**Verification:** PDF exists in `data/pdfs/`; config files updated; `site.original_title` is set; `style-decisions.json.deployment` is `{"target": "github-pages", "base_path": "/<project_name>"}` for GitHub Pages, absent for Vercel, and `{"target": "blog", "base_path": "/books/<project_name>"}` for the host-site export; when notification was configured, `gh variable list` shows `BOOK_HOST_REPO` and `gh secret list` shows `BLOG_DISPATCH_TOKEN`.
 
 ### Step 6: Verify and Report
 
@@ -165,6 +188,7 @@ Report in Traditional Chinese:
 ✓ 遊戲名稱：<GAME_TITLE_EN>（<GAME_TITLE_ZH>）
 ✓ 專案路徑：<TARGET_DIR>
 ✓ Repo 類型：<REPO_VISIBILITY>
+✓ 部署方式：<DEPLOY_TARGET>
 ✓ GitHub repo：https://github.com/<username>/<project_name>
 ✓ PDF 已複製到：data/pdfs/<filename>
 
@@ -173,7 +197,7 @@ Report in Traditional Chinese:
 2. 執行 /init-doc
 ```
 
-If `REPO_VISIBILITY` is `public`, append a deployment note to the report pointing at README.md's "GitHub Pages（Public 專案推薦）" section — public projects should default to GitHub Pages over Vercel (no extra service, deploys straight from the repo).
+Append a deployment note to the report pointing at the README.md〈部署〉subsection for `DEPLOY_TARGET`: "GitHub Pages（Public 專案推薦）", "Vercel（需要密碼保護或私有部署時使用）", or「匯出到 host 網站（可選）」.
 
 **Verification:** All prior verifications pass; report displayed to user.
 

@@ -180,7 +180,7 @@ def write_archive(export_dir: Path, archive: Path) -> None:
 
 
 def check_blog_archive(archive: Path, slug: str) -> dict[str, Any]:
-    """Apply the blog sync script's checks (sync-books.mjs checkExport) to the archive root; return book.json."""
+    """Apply the host site release contract (index.html and book.json at the root, matching base) to the archive; return book.json."""
     with tarfile.open(archive, "r:gz") as tar:
         members = {member.name.removeprefix("./"): member for member in tar.getmembers()}
         for required in ("index.html", MANIFEST_NAME):

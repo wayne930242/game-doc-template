@@ -182,7 +182,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("baseline", type=Path, help="Pre-migration build output, such as docs/dist of the old deployment")
     parser.add_argument("export", type=Path, help="Directory written by scripts/export_site.py")
-    parser.add_argument("--base", required=True, help="Blog base path of the export, such as /books/vaesen-rpg")
+    parser.add_argument("--base", required=True, help="Blog base path of the export, such as /books/my-game")
     args = parser.parse_args()
     try:
         report = compare(args.baseline, args.export, args.base)

@@ -12,13 +12,13 @@ old_host_redirect = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(old_host_redirect)
 
-TARGET = "https://www.wayneh.tw/books/vaesen-rpg"
+TARGET = "https://books.example.com/books/vaesen-rpg"
 
 
 def test_target_base_requires_blog_slug():
-    assert old_host_redirect.target_base("vaesen-rpg", "https://www.wayneh.tw/books/") == TARGET
+    assert old_host_redirect.target_base("vaesen-rpg", "https://books.example.com/books/") == TARGET
     with pytest.raises(ValueError):
-        old_host_redirect.target_base("Vaesen RPG", old_host_redirect.BLOG_BOOKS_URL)
+        old_host_redirect.target_base("Vaesen RPG", "https://books.example.com/books")
 
 
 def test_github_pages_site_preserves_each_old_path(tmp_path):
@@ -44,3 +44,11 @@ def test_github_pages_site_preserves_each_old_path(tmp_path):
 def test_github_pages_requires_page_list(tmp_path):
     with pytest.raises(ValueError):
         old_host_redirect.write_github_pages(tmp_path / "book", TARGET, tmp_path / "missing", "")
+
+
+def test_cli_requires_target_url(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["old_host_redirect.py", "github-pages", "--slug", "vaesen-rpg", "--repo", str(tmp_path), "--pages-from", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc:
+        old_host_redirect.main()
+    assert exc.value.code == 2
+    assert "--blog-books-url" in capsys.readouterr().err
