@@ -92,3 +92,30 @@ def test_confirmed_credits_replace_derived_entries(tmp_path):
     style, missing, _ = migrate_blog_site.derive_metadata(repo, original_title="Hearts of Wulin", credits=credits)
     assert not missing
     assert style["credits"]["entries"] == [{"role": "核心規則翻譯", "name": "zuzu"}, {"role": "整理", "name": "洪偉"}]
+
+
+def test_apply_strips_the_previous_deployment_base_from_content_links(tmp_path):
+    home = "---\ntitle: 石塚\nhero:\n  actions:\n    - link: /cairn-barebones-docs/overview/\n---\n<LinkCard href=\"/cairn-barebones-docs/market/\" />\n[規則](/cairn-barebones-docs/rules/#出身) [首頁](/cairn-barebones-docs) [外部](https://x.test/cairn-barebones-docs/a/) /cairn-barebones-docs-extra/\n"
+    repo = fixture_site(tmp_path, title="石塚", home=home, style={"site": {"original_title": "Cairn"}})
+    config = repo / "docs/astro.config.mjs"
+    config.write_text(config.read_text(encoding="utf-8").replace("\tmarkdown: {},\n", "\tsite: 'https://example.github.io',\n\tbase: '/cairn-barebones-docs',\n\tmarkdown: {},\n"), encoding="utf-8")
+    (repo / "docs/package.json").write_text('{"name":"docs"}', encoding="utf-8")
+    report = migrate_blog_site.migrate(repo, "cairn-barebones", "洪偉", True)
+    assert report["content_files_rebased"] == 1
+    text = (repo / "docs/src/content/docs/index.mdx").read_text(encoding="utf-8")
+    assert "link: /overview/" in text and 'href="/market/"' in text
+    assert "(/rules/#出身)" in text and "[首頁](/)" in text
+    assert "https://x.test/cairn-barebones-docs/a/" in text and "/cairn-barebones-docs-extra/" in text
+    assert migrate_blog_site.migrate(repo, "cairn-barebones", "洪偉", True).get("content_files_rebased") is None
+
+
+def test_records_the_served_hero_and_og_images_over_stale_filenames(tmp_path):
+    home = "---\ntitle: 米赫廷\nhero:\n  image:\n    file: ../../assets/hero.jpg\n---\n"
+    repo = fixture_site(tmp_path, title="米赫廷", home=home, style={"site": {"original_title": "Michtim RPG"}, "images": {"hero": "page100_img00.jpeg", "og": "page019_img00.jpeg"}})
+    (repo / "docs/src/assets").mkdir(parents=True)
+    (repo / "docs/src/assets/hero.jpg").write_bytes(b"jpg")
+    (repo / "docs/public").mkdir()
+    (repo / "docs/public/og-image.jpg").write_bytes(b"jpg")
+    style, _, _ = migrate_blog_site.derive_metadata(repo, "洪偉")
+    assert style["images"]["hero"] == "docs/src/assets/hero.jpg"
+    assert style["images"]["og"] == "docs/public/og-image.jpg"

@@ -85,6 +85,18 @@ def source_translation_warnings(repo: Path) -> list[str]:
     return matches[:10] + ([f"and {len(matches) - 10} more files"] if len(matches) > 10 else [])
 
 
+def site_images(repo: Path, index_path: Path, index_text: str) -> dict[str, str]:
+    """Locate the hero and OG images the site actually serves, as repo-relative paths."""
+    found = {}
+    hero = re.search(r"^\s+file:\s*['\"]?([^'\"\s]+)", index_text, re.MULTILINE)
+    if hero and (index_path.parent / hero.group(1)).resolve().is_file():
+        found["hero"] = str((index_path.parent / hero.group(1)).resolve().relative_to(repo))
+    og = sorted((repo / "docs/public").glob("og-image.*")) if (repo / "docs/public").is_dir() else []
+    if og:
+        found["og"] = str(og[0].relative_to(repo))
+    return found
+
+
 def derive_metadata(
     repo: Path,
     translator: str | None = None,
@@ -121,6 +133,10 @@ def derive_metadata(
         if not any("翻譯" in entry["role"] for entry in credits):
             raise ValueError("Confirmed credits need at least one role containing 翻譯")
         style["credits"] = {**style.get("credits", {}), "entries": credits}
+    images = style.setdefault("images", {})
+    for key, path in site_images(repo, index_path, index).items():
+        if not images.get(key) or not (repo / images[key]).is_file():
+            images[key] = path
     recorded = recorded_translators(style, index)
     credit = translator or (recorded[0] if len(recorded) == 1 else None) or ("confirmed" if credits else None)
     missing = [field for field in ("title", "original_title") if not site.get(field)]
@@ -138,6 +154,26 @@ def derive_metadata(
         if not any("翻譯" in entry.get("role", "") and entry.get("name") == credit for entry in entries):
             entries.append({"role": "翻譯", "name": credit})
     return style, missing, warnings
+
+
+def astro_base(config: str) -> str:
+    match = re.search(r"^\s*base:\s*['\"]([^'\"]+)['\"],?\s*$", config, re.MULTILINE)
+    return match.group(1).rstrip("/") if match else ""
+
+
+def strip_content_base(repo: Path, old_base: str) -> int:
+    """Make content links base-agnostic by removing a previous deployment base."""
+    pattern = re.compile(r"(?<=[(\"'\s=])" + re.escape(old_base) + r"(?=[/\"')\s#?]|$)", re.MULTILINE)
+    changed = 0
+    for path in sorted((repo / "docs/src/content/docs").rglob("*")):
+        if path.suffix not in {".md", ".mdx"}:
+            continue
+        text = path.read_text(encoding="utf-8")
+        revised = pattern.sub(lambda match: "" if text[match.end():match.end() + 1] == "/" else "/", text)
+        if revised != text:
+            path.write_text(revised, encoding="utf-8")
+            changed += 1
+    return changed
 
 
 def merge_package(old: dict, current: dict) -> dict:
@@ -174,6 +210,9 @@ def migrate(
     style["deployment"] = {"target": "blog", "base_path": f"/books/{slug}"}
     config_path = repo / "docs/astro.config.mjs"
     config = config_path.read_text(encoding="utf-8")
+    old_base = astro_base(config)
+    if old_base and old_base != f"/books/{slug}":
+        report["content_files_rebased"] = strip_content_base(repo, old_base)
     updated = update_astro_site_title(update_astro_site_base(config, style), style)
     if updated == config and f"base: '/books/{slug}'" not in config:
         raise ValueError("Could not update Astro base")
