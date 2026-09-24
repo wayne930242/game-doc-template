@@ -269,6 +269,55 @@ python3 scripts/export_site.py --out /tmp/vaesen-book --archive /tmp/vaesen-book
 
 遷移工具更新建置、搜尋、匯出與 GitHub release 工作流程，保留書站的 Markdown／MDX、首頁、側邊欄、圖片、元件、樣式及額外套件。重跑同一指令會維持相同設定。工具會提示書站記錄的其他譯者或來源譯本，供製作名單核對；確認後將 `docs/bun.lock` 與遷移檔案一起提交。
 
+#### 比對遷移前後的內容
+
+以遷移前的建置輸出（例如舊部署 commit 的 `docs/dist`）作為基準，與匯出目錄比對：
+
+```bash
+python3 /Users/weihung/projects/game-doc-template/tools/compare_blog_export.py <baseline-dist> /tmp/vaesen-book --base /books/vaesen-rpg
+```
+
+工具比對 HTML 頁面集合、每頁 `.sl-markdown-content` 的可見文字，並爬過匯出中每個站內 `href`／`src`／`srcset`／`poster`，這些連結都必須位於 `--base` 之下且指向存在的檔案。只差在空白的頁面列於 `whitespace_only_pages`，不算遺失（例如 LinkCard 間距或移除 `<!-- page N -->` 註解後留下的換行）。結束碼：`0` 表示沒有遺失，`1` 表示頁面、文字或連結有差異，`2` 表示輸入目錄無效。
+
+#### 舊網址轉址
+
+每個舊站都以永久轉址導向 blog 上的相同路徑。`tools/old_host_redirect.py` 依 slug 與舊站類型產生轉址內容，預設目標為 `https://www.wayneh.tw/books/<slug>/`。
+
+**Vercel 舊站**：部署只含 `vercel.json` 的轉址專案，所有路徑回應 301 並保留 query。先斷開舊專案與 git，之後推送書站 repo 就不會再部署舊站。以 Vaesen（Vercel 專案 `vaesen-rpg`、slug `vaesen-rpg`）為例：
+
+```bash
+SCOPE=team_jjWnz7YtSSCWcDZKJaQ2dDRd PROJECT=vaesen-rpg SLUG=vaesen-rpg
+DIR=$(mktemp -d)/redirect-$PROJECT
+python3 /Users/weihung/projects/game-doc-template/tools/old_host_redirect.py vercel --slug "$SLUG" --out "$DIR"
+cd "$DIR"
+vercel link --yes --project "$PROJECT" --scope "$SCOPE"
+rm -f .env.local  # vercel link 會拉下環境變數，轉址部署不需要
+vercel git disconnect --yes --scope "$SCOPE"
+vercel deploy --prod --yes --scope "$SCOPE"
+curl -sI "https://<舊網域>/rules/x/" | grep -iE '^(HTTP|location)'  # 預期 301 與 blog 上的相同路徑
+```
+
+確認轉址後，在書站 repo 移除舊的密碼閘門並推送：
+
+```bash
+git rm middleware.ts api/site-auth.ts vercel.json
+git commit -m "chore: remove the old Vercel password gate"
+git push
+```
+
+Vercel 專案與網域保留不刪；刪除需由使用者決定。
+
+**GitHub Pages 舊站**：Pages 無法送出 301，因此工具在書站 repo 寫入 `old-host-redirect/` 靜態轉址站與 `.github/workflows/deploy.yml`。每個舊頁面都有 meta refresh、canonical 連結及保留 query 與 fragment 的 script，`404.html` 將其他路徑去掉舊前綴後轉到 blog。`--pages-from` 提供舊頁面清單，使用該書的匯出目錄即可：
+
+```bash
+python3 /Users/weihung/projects/game-doc-template/tools/old_host_redirect.py github-pages --slug cairn-barebones --repo "$PWD" --pages-from /tmp/cairn-book --old-base /cairn-barebones-docs
+git add old-host-redirect .github/workflows/deploy.yml
+git commit -m "chore: redirect the old Pages site to the blog"
+git push
+```
+
+書站 repo 若仍有 `middleware.ts`、`api/site-auth.ts` 與 `vercel.json`，同樣以上述 `git rm` 移除。
+
 ### GitHub Pages（獨立部署的 Public 專案）
 
 1. 記錄部署目標並重建導覽，`generate_nav.py` 會在 `docs/astro.config.mjs` 寫入 `site` 與 `base`：
