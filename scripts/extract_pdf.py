@@ -754,7 +754,7 @@ def extract_images(pdf_path: Path, output_dir: Path) -> list[dict]:
 
         # get_images() may list one XObject once for every use. get_image_rects()
         # already returns every placement, so visiting the XObject again multiplies
-        # the output (a 36-die table became 216 files in Kedamono Opera).
+        # the output (a 36-die table can become 216 files).
         seen_xrefs: set[int] = set()
         for img_index, img in enumerate(page_images):
             xref = img[0]

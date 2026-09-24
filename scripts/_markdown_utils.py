@@ -220,8 +220,7 @@ def _is_frontmatter_block(text: str) -> bool:
     """判斷區塊是否為 YAML frontmatter（Astro/Starlight 內容檔開頭的 `---` 區塊）。
 
     frontmatter 區塊本身不以句末標點結尾，若不排除會被誤判為段落續句的前一區塊，
-    把 frontmatter 結尾的 `---` 與下一個區塊的文字黏在同一行（見 kedamono-species/index.md
-    的實際案例：``--- with these other weaker creatures...``），破壞 YAML 語法。
+    把 frontmatter 結尾的 `---` 與下一個區塊的文字黏在同一行，破壞 YAML 語法。
     """
     return text.startswith("---\n") and text.rstrip("\n").endswith("\n---")
 

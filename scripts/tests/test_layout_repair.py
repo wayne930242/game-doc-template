@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from _layout_cleanup import (
@@ -14,10 +15,8 @@ from _layout_cleanup import (
     strip_page_furniture,
     unique_placements,
 )
-from _paired_layout import _align_headings, _special, _wingdings_lists
+from _paired_layout import PdfRole, _anchors, _corroborated_display_candidates, _format_translated_spread, _pair_candidates, _position, _restore_paired_glyph_lists, _set_label, _source_candidates, _tree_digest, layout_plan_applied, normal
 from repair_layout import (
-    format_english_spread_steps,
-    format_spread_steps,
     layout_issues,
     recover_pdf_headings,
     repair_english_toc,
@@ -109,17 +108,20 @@ def test_pdf_proved_heading_only_not_short_body_line():
     assert "\n外典特技與暗獸物種的特技不同。" in fixed
 
 
-def test_spread_order_and_page_links_are_readable():
-    body = "# 序幕\n\n第 158 頁　第 159 頁　第 160 頁\n\n日期、時間與參加者　邀請參加者。\n\n# 舞台演出\n\n推進故事　描述情況。\n\n# 謝幕\n\n重置暗獸　恢復可用。\n\n## 分享你的遊玩成果！"
+def test_pdf_proved_spread_order_and_page_links_are_readable():
+    body = "第 158 頁　第 159 頁　第 160 頁"
     leaves = [("session-rules/prelude", {"title": "序幕", "pages": [166, 179]})]
     linked, count = repair_printed_refs(body, leaves, "/books/kedamono-opera", 8)
-    formatted, steps = format_spread_steps(linked)
-    assert count == 1 and steps >= 5
-    assert "相關章節：[序幕](/books/kedamono-opera/session-rules/prelude/)" in formatted
-    assert "- **日期、時間與參加者：** 邀請參加者。" in formatted
-    assert "- **重置暗獸：** 恢復可用。" in formatted
-    english, count = format_english_spread_steps("###### Prelude\n\nDate, Time, and People Recruit everyone.\n\n###### Share Your Play!")
-    assert count == 3 and "- **Date, Time, and People:** Recruit everyone." in english
+    assert count == 1 and "相關章節：[序幕](/books/kedamono-opera/session-rules/prelude/)" in linked
+    lines = ["## 開始", "第一步　準備。", "## 選擇", "做出選擇。", "## 結束", "最後一步　收尾。"]
+    entries = [{"target": title, "pdf": {"kind": "display", "size": 26, "page": page}}
+               for title, page in (("開始", 1), ("結束", 2))]
+    labels = [{"page": page} for page in (1, 1, 2)]
+    assert _format_translated_spread(lines, entries, labels) == 3
+    assert lines[1] == "- **第一步：** 準備。"
+    assert lines[2] == "- **選擇：** 做出選擇。"
+    assert lines[5] == "- **最後一步：** 收尾。"
+    assert _format_translated_spread(lines, entries, labels) == 0
 
 
 def test_layout_gate_flags_english_navigation_and_raw_artifacts(tmp_path: Path):
@@ -145,91 +147,75 @@ def test_layout_gate_flags_repeated_lower_level_page_titles(tmp_path: Path):
     assert any("PDF bullet marker remains" in issue for issue in issues)
 
 
-def test_paired_heading_recovery_keeps_siblings_and_cards_below_sections():
-    source = ["---", "title: Apocrypha", "---", "## Apocryphal Feats", " Apocryphal Operas",
-              "## Legendary Operas", "###### dark ritual"]
-    target = ["---", "title: 外典", "---", "## 外典特技", "外典歌劇（Apocryphal Operas）",
-              "## 傳說歌劇", "# 黑暗儀式"]
-    _special("on-kedamono/apocrypha.md", source, target)
-    _align_headings("on-kedamono/apocrypha.md", source, target)
-    assert source[4] == "## Apocryphal Operas"
-    assert target[4] == "## 外典歌劇（Apocryphal Operas）"
-    assert source[6] == "### dark ritual" and target[6] == "### 黑暗儀式"
+def test_pdf_heading_roles_match_source_without_a_book_table():
+    source = ["---", "title: Forest", "---", "", " Forest Entrance", "", "A passage leads inside."]
+    roles = [PdfRole("Forest Entrance", 7, 11.0, 40.5, 115.0, "heading")]
+    candidates = _source_candidates(source, roles)
+    assert [(item["text"], item["page"], item["kind"]) for item in candidates] == [
+        ("Forest Entrance", 7, "heading")
+    ]
 
 
-def test_legendary_conditions_restore_two_list_items_on_both_sides():
-    source = [" You have at least 1 available Legend  You have your Opera available"]
-    target = ["你至少有 1 個可用的傳說（Legend）。", "你的歌劇也處於可用狀態。"]
-    _special("on-kedamono/apocrypha.md", source, target)
-    assert source[0].splitlines() == ["- You have at least 1 available Legend", "- You have your Opera available"]
-    assert target == ["- 你至少有 1 個可用的傳說（Legend）。", "- 你的歌劇也處於可用狀態。"]
+def test_shared_media_anchors_translation_position():
+    source = ["Intro", "![map](page007_img01.png)", "Forest Entrance", "Rule text"]
+    target = ["前言", "![map](page007_img01.png)", "", "森林入口", "規則文字"]
+    points = _anchors(source, target)
+    assert (1, 1) in points
+    assert 2 < _position(2, points) < 4
 
 
-def test_overview_spread_uses_stage_headings_and_callout_lists():
-    source = ["## Prelude", "## Choose Kedamono", "", "Players read the Intro.",
-              "## Define the Pack", "", "Discuss the pack.",
-              "## Share Your Play!", "", "Share your work."]
-    target = ["## 序幕", "## 選擇暗獸", "", "玩家閱讀前奏。",
-              "## 決定夥群", "", "討論夥群。",
-              "## 分享你的遊玩成果！", "", "分享作品。"]
-    _special("basic-rules/index.md", source, target)
-    assert "## Prelude" in source and "## 序幕" in target
-    assert "- **Choose Kedamono:** Players read the Intro." in source
-    assert "- **選擇暗獸：** 玩家閱讀前奏。" in target
-    assert "- **分享你的遊玩成果！** 分享作品。" in target
-    assert "## Share Your Play!" not in source
+def test_structural_alignment_uses_glossary_and_order():
+    source = [
+        {"text": "Forest Entrance", "expected": 2.1, "page_title": "森林", "block": 2},
+        {"text": "Dark Forest", "expected": 5.2, "page_title": "森林", "block": 5},
+    ]
+    target = [
+        {"text": "森林入口", "heading": False, "block": 2},
+        {"text": "附近的道路", "heading": False, "block": 3},
+        {"text": "暗之森", "heading": True, "block": 5},
+    ]
+    pairs, missing = _pair_candidates(source, target, [(normal("Dark Forest"), "暗之森")])
+    assert pairs == [(0, 0), (1, 2)] and missing == []
 
 
-def test_character_creation_table_labels_follow_parent_section():
-    source = ["## makinG a kedamono", "## kedamono sPeCies", "## feaTs", "## Sample Ordeal", "## Twist Portents"]
-    target = ["## 創建暗獸", "## 暗獸物種", "## 特技", "## 試煉範例", "## 波折預言"]
-    _align_headings("basic-rules/index.md", source, target)
-    assert source == ["## makinG a kedamono", "### kedamono sPeCies", "### feaTs", "## Sample Ordeal", "### Twist Portents"]
-    assert target == ["## 創建暗獸", "### 暗獸物種", "### 特技", "## 試煉範例", "### 波折預言"]
+def test_heading_update_uses_block_position_for_repeated_labels():
+    lines = ["第一段。", "", "難度", "", "第二段。", "", "難度"]
+    assert _set_label(lines, "難度", 3, 3)
+    assert lines[2] == "難度" and lines[6] == "### 難度"
 
 
-def test_wingdings_list_recovery_keeps_paragraph_boundaries():
-    lines = ["介紹。", "", " 第一項。  第二項。", "", "結語。"]
-    _wingdings_lists(lines)
-    assert lines == ["介紹。", "", "- 第一項。", "- 第二項。", "", "結語。"]
+def test_plain_pdf_display_needs_aligned_glossary_heading():
+    roles = [PdfRole("Opera", 17, 20, 40, 100, "display")]
+    source = ["Intro", "Opera", "Rules"]
+    target = ["前言", "### 歌劇", "規則"]
+    assert _corroborated_display_candidates(source, target, roles, [(0, 0), (3, 3)],
+                                            [(normal("Opera"), "歌劇")], []) == [
+        {"block": 1, "text": "Opera", "page": 17, "size": 20, "kind": "display", "x": 40, "y": 100}
+    ]
+    assert not _corroborated_display_candidates(source, target, roles, [(0, 0), (3, 3)], [], [])
 
 
-def test_pdf_verified_species_heading_is_paired_with_existing_translation():
-    source = [" Fickle Beasts", "", "Fierce cats."]
-    target = ["善變的野獸", "", "凶猛的貓。"]
-    _special("on-kedamono/kedamono-species/sphinx.md", source, target)
-    assert source[0] == "## Fickle Beasts"
-    assert target[0] == "## 善變的野獸"
+def test_paired_bullet_recovery_preserves_paragraph_boundaries():
+    source = ["介紹。", "", " First item.  Second item.", "", "結語。"]
+    target = ["介紹。", "", "- 第一項。", "", "- 第二項。", "", "結語。"]
+    assert _restore_paired_glyph_lists(source, target) == 2
+    assert source == ["介紹。", "", "- First item.", "- Second item.", "", "結語。"]
+    assert target == ["介紹。", "", "- 第一項。", "", "- 第二項。", "", "結語。"]
 
 
-def test_species_legend_subchoices_are_nested_lists_on_both_sides():
-    source = ["- 1. Clear a portent.", "- 2. Mark a portent.", "- • Feat portent", "• Twist portent", "• Random portent"]
-    target = ["- 1. 消除預言。", "- 2. 標記預言。", "- • 特技預言", "• 波折預言", "• 隨機預言"]
-    _special("on-kedamono/kedamono-species/index.md", source, target)
-    assert source == ["1. Clear a portent.", "2. Mark a portent.", "   - Feat portent", "   - Twist portent", "   - Random portent"]
-    assert target == ["1. 消除預言。", "2. 標記預言。", "   - 特技預言", "   - 波折預言", "   - 隨機預言"]
-
-
-def test_pdf_display_callout_stays_prose_and_legend_section_stays_heading():
-    source = [" Your character is an ageless kedamono."]
-    target = ["你的角色是一隻長生不老的暗獸。"]
-    _special("basic-rules/index.md", source, target)
-    assert source == ["**Your character is an ageless kedamono.**"]
-    assert target == ["**你的角色是一隻長生不老的暗獸。**"]
-
-    source = [" Using Your Legend", "### Legend Effects"]
-    target = ["### 使用傳說", "傳說效果"]
-    _special("on-kedamono/kedamono-species/index.md", source, target)
-    assert source == ["### Using Your Legend", "**Legend Effects**"]
-    assert target == ["### 使用傳說", "**傳說效果**"]
-
-
-def test_extracted_table_caption_demotes_on_first_pass():
-    source = [" Ordeal Difficulty", "###### Ordeal Difficulty"]
-    target = [" 試煉難度", "###### 試煉難度（Difficulty）"]
-    _special("on-game-mastering/making-scenarios.md", source, target)
-    assert source == ["### Ordeal Difficulty", "**Ordeal Difficulty**"]
-    assert target == ["### 試煉難度", "**試煉難度（Difficulty）**"]
-    _special("on-game-mastering/making-scenarios.md", source, target)
-    assert source == ["### Ordeal Difficulty", "**Ordeal Difficulty**"]
-    assert target == ["### 試煉難度", "**試煉難度（Difficulty）**"]
+def test_applied_layout_plan_refuses_changed_content(tmp_path: Path):
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir(); target.mkdir()
+    (source / "chapter.md").write_text("## Rule\n", encoding="utf-8")
+    (target / "chapter.md").write_text("## 規則\n", encoding="utf-8")
+    plan = tmp_path / "layout-repair.json"
+    plan.write_text(json.dumps({"applied": {"source_sha256": _tree_digest(source),
+                                             "target_sha256": _tree_digest(target)}}), encoding="utf-8")
+    assert layout_plan_applied(plan, source, target)
+    (target / "chapter.md").write_text("## 新規則\n", encoding="utf-8")
+    try:
+        layout_plan_applied(plan, source, target)
+    except ValueError as error:
+        assert "derive a new PDF layout plan" in str(error)
+    else:
+        raise AssertionError("changed content must require a fresh plan")

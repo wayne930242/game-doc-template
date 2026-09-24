@@ -15,8 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from _layout_cleanup import annotate_d66_pair_headings, d66_pages, d66_pair_pages, repair_d66_tables, strip_duplicate_title, strip_page_furniture
-from _kedamono_heading_pairs import HEADING_PAIRS
-from _paired_layout import repair_paired_layout
+from _paired_layout import _format_translated_spread, _pdf_roles, add_reviewed_layout, derive_layout_plan, layout_plan_applied, match_chapter_paths, repair_paired_layout
 from generate_nav import deployment_base_path, regenerate
 from split_chapters import build_page_text_stats, extract_pages, group_images_by_page, normalize_files, write_meta_yml
 
@@ -164,33 +163,14 @@ def repair_printed_refs(body: str, leaves: list[tuple[str, dict]], base: str, of
     return "\n\n".join(p for p in paragraphs if p.strip()), changed
 
 
-def format_spread_steps(body: str) -> tuple[str, int]:
-    """Render the source spread's ordered callouts as a readable Markdown list."""
-    if not re.search(r"(?m)^# 序幕$", body) or not re.search(r"(?m)^# 謝幕$", body):
-        return body, 0
-    lines = body.splitlines()
-    active = False
-    changed = 0
-    for index, line in enumerate(lines):
-        if line == "# 序幕": active = True
-        if active and line.startswith("# "):
-            lines[index] = "## " + line[2:]
-            changed += 1
-        if active and re.match(r"^[^#|!\-\n]{2,25}　[^　\n].+", line):
-            label, description = line.split("　", 1)
-            lines[index] = f"- **{label}：** {description}"
-            changed += 1
-        if line == "## 分享你的遊玩成果！":
-            active = False
-    return "\n".join(lines), changed
-
-
 def repair_english_toc(body: str, chapters: dict, leaves: list[tuple[str, dict]], base: str) -> tuple[str, int]:
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
     start = next((i for i, p in enumerate(paragraphs) if p.lower() == "table of contents"), None)
     if start is None:
         return body, 0
-    end = next((i for i in range(start + 1, len(paragraphs)) if re.match(r"^#{2,6}\s+basic rules$", paragraphs[i], re.I)), None)
+    first_title = paragraphs[start + 1].strip()
+    end = next((i for i in range(start + 1, len(paragraphs))
+                if re.fullmatch(r"#{2,6}\s+" + re.escape(first_title), paragraphs[i], re.I)), None)
     if end is None:
         return body, 0
     sections = sorted(chapters.items(), key=lambda item: item[1].get("order", 9999))
@@ -206,7 +186,7 @@ def repair_english_toc(body: str, chapters: dict, leaves: list[tuple[str, dict]]
     section_index = 0
     count = 0
     for p in paragraphs[start + 1:end]:
-        if section_index == 0 and p.lower() == "basic rules":
+        if section_index == 0 and p.casefold() == first_title.casefold():
             slug, section = sections[0]
             revised.append(f"### [{p}]({section_route(slug, section, leaves, base)})")
             section_index += 1; count += 1
@@ -234,59 +214,18 @@ def repair_english_toc(body: str, chapters: dict, leaves: list[tuple[str, dict]]
     return "\n\n".join(revised), count
 
 
-_ENGLISH_SPREAD_LABELS = (
-    "Date, Time, and People", "Decide Who GMs", "Reveal the Intro",
-    "Mark Intro Portents", "Set Initiative", "Play the Story", "Ordeals",
-    "Fulfill Portents", "Opera & Legends", "Interlude", "Conclude the Story",
-    "Reset Kedamono", "Gain Legend",
-)
-
-
-def format_english_spread_steps(body: str) -> tuple[str, int]:
-    if not re.search(r"(?m)^###### Prelude$", body):
-        return body, 0
-    lines = body.splitlines()
-    active = False
-    changed = 0
-    for index, line in enumerate(lines):
-        if line == "###### Prelude":
-            active = True
-        if not active:
-            continue
-        if line.startswith("###### "):
-            lines[index] = "## " + line[7:]
-            changed += 1
-        for label in _ENGLISH_SPREAD_LABELS:
-            if line.startswith(label + " "):
-                lines[index] = f"- **{label}:** {line[len(label) + 1:]}"
-                changed += 1
-                break
-        if line == "###### Share Your Play!":
-            active = False
-    return "\n".join(lines), changed
-
-
 @lru_cache(maxsize=2)
 def _pdf_heading_index(pdf: Path) -> dict[int, list[str]]:
     try:
         import pymupdf
     except ImportError:
         return {}
-    doc = pymupdf.open(pdf)
+    with pymupdf.open(pdf) as doc:
+        roles = _pdf_roles(doc, (1, len(doc)))
     headings: dict[int, list[str]] = {}
-    try:
-        for number in range(1, len(doc) + 1):
-            page_headings: list[str] = []
-            for block in doc[number - 1].get_text("dict")["blocks"]:
-                for line in block.get("lines", []):
-                    spans = line["spans"]
-                    if any(("Bahnschrift" in span["font"] and span["size"] >= 10.5) or ("CartaMarina" in span["font"] and span["size"] >= 20) for span in spans):
-                        phrase = re.sub(r"^[^A-Za-z]+", "", "".join(span["text"] for span in spans)).strip()
-                        if len(phrase) >= 5:
-                            page_headings.append(phrase)
-            headings[number] = page_headings
-    finally:
-        doc.close()
+    for role in roles:
+        if role.kind in {"heading", "display"}:
+            headings.setdefault(role.page, []).append(role.text)
     return headings
 
 
@@ -358,8 +297,7 @@ def paired_english_headings(catalog: list[str], translated_body: str) -> list[st
 def staged_missing_headings(source_baseline: Path | None, slug: str, catalog: list[str]) -> list[str]:
     if source_baseline is None:
         return []
-    source_slug = "index/index" if slug == "book-index/index" else slug
-    path = source_baseline / f"{source_slug}.md"
+    path = source_baseline / f"{slug}.md"
     if not path.is_file():
         return []
     body = split_frontmatter(path.read_text(encoding="utf-8"))[1]
@@ -443,6 +381,10 @@ def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str,
     if source_baseline is None:
         candidate = project_root / ".state/template-sync/staging/docs/src/content/docs"
         source_baseline = candidate if candidate.is_dir() else None
+    target_pages = {f"{slug}.md": tuple(entry["pages"]) for slug, entry in leaves}
+    source_for_target = ({target: source for source, (target, _) in
+                          match_chapter_paths(source_baseline, docs, target_pages).items()}
+                         if source_baseline else {})
     for slug, entry in leaves:
         path = docs / f"{slug}.md"
         if not path.exists():
@@ -463,17 +405,15 @@ def repair(project_root: Path, source_baseline: Path | None = None) -> dict[str,
         if dice.intersection(range(entry["pages"][0], entry["pages"][1] + 1)):
             body, count = repair_d66_tables(body)
             stats["dice_tables_repaired"] += count
-        if slug.endswith("basic-rules/index") or "目錄" in body[:3000]:
-            body, labels, count = repair_toc(body, chapters, leaves, base)
-            toc_labels.update(labels)
-            stats["toc_entries_linked"] += count
+        body, labels, count = repair_toc(body, chapters, leaves, base)
+        toc_labels.update(labels)
+        stats["toc_entries_linked"] += count
         body, count = repair_printed_refs(body, leaves, base, offset)
         stats["page_ref_paragraphs_linked"] += count
-        if slug.endswith("basic-rules/index"):
-            body, count = format_spread_steps(body)
-            stats["spread_steps_formatted"] += count
         if pdf.exists():
-            catalog = staged_missing_headings(source_baseline, slug, corroborated_headings(pdf, pages, tuple(entry["pages"])))
+            source_rel = source_for_target.get(f"{slug}.md", f"{slug}.md")
+            catalog = staged_missing_headings(source_baseline, source_rel.removesuffix(".md"),
+                                              corroborated_headings(pdf, pages, tuple(entry["pages"])))
             body, count = recover_pdf_headings(body, catalog)
             stats["headings_recovered"] += count
         old_body = body
@@ -498,6 +438,9 @@ def repair_staged_source(project_root: Path, source_docs: Path) -> dict[str, int
     The staging tree is an existing translation baseline, so this edits a caller
     supplied copy in place and leaves the synced staging directory untouched.
     """
+    target_docs = project_root / "docs/src/content/docs"
+    if layout_plan_applied(project_root / "data/layout-repair.json", source_docs, target_docs):
+        return {"already_applied": 1}
     config = json.loads((project_root / "chapters.json").read_text(encoding="utf-8"))
     for section in config["chapters"].values():
         section["files"] = normalize_files(section.get("files", {}))
@@ -511,14 +454,19 @@ def repair_staged_source(project_root: Path, source_docs: Path) -> dict[str, int
     dice = d66_pages(manifest)
     pairs = d66_pair_pages(manifest)
     leaves = chapter_leaves(config["chapters"])
+    target_pages = {f"{slug}.md": tuple(entry["pages"]) for slug, entry in leaves}
+    paired_paths = match_chapter_paths(source_docs, target_docs, target_pages)
+    source_for_target = {target: source for source, (target, _) in paired_paths.items()}
     style_path = project_root / "style-decisions.json"
     style = json.loads(style_path.read_text(encoding="utf-8")) if style_path.exists() else {}
     base = deployment_base_path(style)
     pdf = project_root / "data/pdfs" / (Path(config.get("source", "")).stem.removesuffix("_pages") + ".pdf")
     stats = Counter()
     for slug, entry in leaves:
-        source_slug = "index/index" if slug == "book-index/index" else slug
-        path = source_docs / f"{source_slug}.md"
+        source_rel = source_for_target.get(f"{slug}.md")
+        if source_rel is None:
+            continue
+        path = source_docs / source_rel
         if not path.exists():
             continue
         original = path.read_text(encoding="utf-8")
@@ -536,13 +484,10 @@ def repair_staged_source(project_root: Path, source_docs: Path) -> dict[str, int
         if dice.intersection(range(entry["pages"][0], entry["pages"][1] + 1)):
             body, count = repair_d66_tables(body)
             stats["dice_tables_repaired"] += count
-        if slug == "basic-rules/index":
-            body, count = repair_english_toc(body, config["chapters"], leaves, base)
-            stats["toc_entries_linked"] += count
-            body, count = format_english_spread_steps(body)
-            stats["spread_steps_formatted"] += count
+        body, count = repair_english_toc(body, config["chapters"], leaves, base)
+        stats["toc_entries_linked"] += count
         if pdf.exists():
-            target = project_root / "docs/src/content/docs" / f"{slug}.md"
+            target = target_docs / f"{slug}.md"
             target_body = split_frontmatter(target.read_text(encoding="utf-8"))[1] if target.exists() else ""
             candidates = paired_english_headings(pdf_heading_catalog(pdf, tuple(entry["pages"])), target_body)
             body, count = recover_english_headings(body, candidates)
@@ -553,9 +498,9 @@ def repair_staged_source(project_root: Path, source_docs: Path) -> dict[str, int
         if revised != original:
             path.write_text(revised, encoding="utf-8")
             stats["files_changed"] += 1
-    source_pages = {f"{('index/index' if slug == 'book-index/index' else slug)}.md": entry["pages"]
-                    for slug, entry in leaves}
-    stats.update(repair_paired_layout(source_docs, project_root / "docs/src/content/docs", pdf, source_pages))
+    stats.update(repair_paired_layout(
+        source_docs, target_docs, pdf, target_pages,
+        project_root / "glossary.json", project_root / "data/layout-repair.json"))
     return dict(stats)
 
 
@@ -570,10 +515,17 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
     for section in config.get("chapters", {}).values():
         section["files"] = normalize_files(section.get("files", {}))
     leaves_by_path = {f"{slug}.md": entry for slug, entry in chapter_leaves(config.get("chapters", {}))}
+    plan_path = project_root / "data/layout-repair.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8")) if plan_path.is_file() else {}
+    source_for_target_plan = {target: source for source, target in plan.get("targets", {}).items()}
     pdf = project_root / "data/pdfs" / (Path(config.get("source", "")).stem.removesuffix("_pages") + ".pdf")
     if source_baseline is None:
         candidate = project_root / ".state/template-sync/staging/docs/src/content/docs"
         source_baseline = candidate if candidate.is_dir() else None
+    source_for_target = ({target: source for source, (target, _) in
+                          match_chapter_paths(source_baseline, docs,
+                                              {rel: tuple(entry["pages"]) for rel, entry in leaves_by_path.items()}).items()}
+                         if source_baseline else {})
     source_path = project_root / config.get("source", "")
     pages = extract_pages(source_path.read_text(encoding="utf-8")) if source_path.is_file() else {}
     for slug, section in config.get("chapters", {}).items():
@@ -595,23 +547,14 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
         name = str(path.relative_to(project_root))
         if "" in body:
             issues.append(f"{name}: PDF bullet marker remains in rendered prose")
-        if pdf.name == "Kedamono_Opera.pdf" and pdf.is_file():
-            rel = str(path.relative_to(docs))
-            expected = Counter((level, label.removeprefix("- ")) for _, label, level in HEADING_PAIRS.get(rel, ()))
-            actual = Counter((len(m.group(1)), m.group(2)) for m in re.finditer(r"(?m)^(#{2,6})\s+(.+?)\s*$", body))
-            for heading, count in expected.items():
-                if actual[heading] < count:
-                    issues.append(f"{name}: PDF heading missing: {heading[1]}")
-            if rel == "basic-rules/index.md":
-                for label in ("選擇暗獸", "決定夥群", "分享你的遊玩成果！"):
-                    if not re.search(rf"(?m)^- \*\*{re.escape(label)}[：]?(?:\*\*)", body):
-                        issues.append(f"{name}: overview callout missing: {label}")
         for line_number, line in enumerate(body.splitlines(), 1):
             if re.match(r"^#\s+", line):
                 issues.append(f"{name}:{line_number}: body H1 remains")
         entry = leaves_by_path.get(str(path.relative_to(docs)))
         if entry and pdf.is_file():
-            catalog = staged_missing_headings(source_baseline, str(path.relative_to(docs)).removesuffix(".md"), corroborated_headings(pdf, pages, tuple(entry["pages"])))
+            source_rel = source_for_target.get(str(path.relative_to(docs)), str(path.relative_to(docs)))
+            catalog = staged_missing_headings(source_baseline, source_rel.removesuffix(".md"),
+                                              corroborated_headings(pdf, pages, tuple(entry["pages"])))
             _, pending_headings = recover_pdf_headings(body, catalog)
             if pending_headings:
                 issues.append(f"{name}: {pending_headings} source-typography headings remain plain paragraphs")
@@ -634,8 +577,11 @@ def layout_issues(project_root: Path, source_baseline: Path | None = None) -> li
             filename = Path(match.group(1)).name
             if filename in known_images and filename not in keep:
                 issues.append(f"{name}: layout image {filename}")
-        if path.name == "index.md" and path.parent.name == "basic-rules" and re.search(r"(?m)^# 序幕$", body):
-            issues.append(f"{name}: flattened overview spread")
+        source_rel = source_for_target_plan.get(str(path.relative_to(docs)))
+        if source_rel and source_rel in plan.get("spreads", {}):
+            probe = body.splitlines()
+            if _format_translated_spread(probe, plan["chapters"][source_rel], plan["spreads"][source_rel]):
+                issues.append(f"{name}: flattened illustrated callouts")
     for path in sorted(docs.rglob("_meta.yml")):
         match = re.search(r"(?m)^label:\s*(.+)$", path.read_text(encoding="utf-8"))
         if match and not re.search(r"[\u3400-\u9fff]", match.group(1)):
@@ -648,6 +594,9 @@ def main() -> int:
     parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--check", action="store_true", help="Report publication-blocking layout artifacts")
     parser.add_argument("--staged-source", type=Path, help="Repair a writable copy of staged English chapters")
+    parser.add_argument("--derive-layout-plan", action="store_true", help="Write PDF-backed layout evidence into project data")
+    parser.add_argument("--reviewed-source", type=Path, help="PDF-reviewed English chapters for layout-plan derivation")
+    parser.add_argument("--reviewed-target", type=Path, help="PDF-reviewed translated chapters for layout-plan derivation")
     parser.add_argument("--source-baseline", type=Path, help="Read-only staging tree used to corroborate lost headings")
     args = parser.parse_args()
     project_root = args.project_root.resolve()
@@ -657,6 +606,25 @@ def main() -> int:
             print(issue)
         print(f"layout issues: {len(issues)}")
         return 1 if issues else 0
+    if args.derive_layout_plan:
+        if not args.staged_source or bool(args.reviewed_source) != bool(args.reviewed_target):
+            parser.error("--derive-layout-plan requires --staged-source and both reviewed paths together")
+        config = json.loads((project_root / "chapters.json").read_text(encoding="utf-8"))
+        for section in config["chapters"].values():
+            section["files"] = normalize_files(section.get("files", {}))
+        pages = {f"{slug}.md": tuple(entry["pages"])
+                 for slug, entry in chapter_leaves(config["chapters"])}
+        pdf = project_root / "data/pdfs" / (Path(config["source"]).stem.removesuffix("_pages") + ".pdf")
+        plan = project_root / "data/layout-repair.json"
+        derived = derive_layout_plan(args.staged_source.resolve(), project_root / "docs/src/content/docs",
+                                     pdf, pages, project_root / "glossary.json", plan)
+        stats = {"chapters": len(derived["chapters"]), "unresolved": len(derived["unresolved"])}
+        if args.reviewed_source:
+            stats.update(add_reviewed_layout(
+                plan, args.reviewed_source.resolve(), args.reviewed_target.resolve(),
+                args.staged_source.resolve(), project_root / "docs/src/content/docs"))
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
+        return 0
     if args.staged_source:
         print(json.dumps(repair_staged_source(project_root, args.staged_source.resolve()), ensure_ascii=False, indent=2))
         return 0
