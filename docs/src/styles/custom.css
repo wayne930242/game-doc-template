@@ -760,3 +760,16 @@ i {
   padding: 0.1em 0.3em;
   border-radius: 3px;
 }
+
+/* ============================================
+   表格內插圖以縮圖呈現
+   ============================================ */
+
+.sl-markdown-content td img {
+  max-width: 10rem;
+  height: auto;
+}
+
+.sl-markdown-content tr:has(td img) td {
+  vertical-align: middle;
+}
